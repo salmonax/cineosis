@@ -6,7 +6,7 @@ using UnityEngine;
 public class ClipConfig
 {
     // Manually increment this when changing the format!
-    public int version = 25;
+    public int version = 27;
 
     // Note on the properties:
     //  1) The default values will override the Skybox Material properties

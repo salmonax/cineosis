@@ -20,7 +20,8 @@ Properties {
     _NudgeFactorX ("NudgeFactorX", Range(0, 1)) = 0
     _NudgeFactorY ("NudgeFactorY", Range(0, 1)) = 0
     _ZoomShiftX ("_ZoomShiftX", Range(-1, 1)) = 1
-    _ZoomShiftY ("_ZoomShiftY", Range(-1, 1)) = 1
+    _ZoomShiftY ("_ZoomShiftY", Range(-1000, 1000)) = 1
+    _AutoShiftRotationXNudgeFactor ("AutoShiftRotationXNudgeFactor", Range(-360, 360)) = 0
     _NudgeZ ("NudgeZ", Range(-1, 1)) = 0
     _Zoom ("Zoom", Range(-1.5, 6)) = 0
      BaseZoom ("BaseZoom", Range(-1.5, 1.5)) = 0
@@ -65,6 +66,7 @@ SubShader {
         #include "./cginc/hsbe.cginc"
 
         float4 _ColorTest;
+        float _AutoShiftRotationXNudgeFactor; // multiplied against ShiftY; should be 0 if autoshift is off
         float3 _ColorTestArray[1];
         int _ColorArrayLength;
         float3 _LeftColorExclusionArray[10];
@@ -98,6 +100,9 @@ SubShader {
         float _ZoomAdjustNudgeFactor;
         float _ZoomShiftX;
         float _ZoomShiftY;
+        // NOTE: this one only gets used in AutoShiftMode:
+
+        float _RotationShiftX; // No prop for this one; didn't forget.
         float _HorizontalOffsetNudgeFactor;
         float _NudgeX;
         float _NudgeY;
@@ -232,7 +237,7 @@ SubShader {
             UNITY_SETUP_INSTANCE_ID(v);
             UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
             float3 rotated = RotateAroundYInDegrees(v.vertex, _RotationY);
-            rotated = RotateAroundXInDegrees(rotated, _RotationX);
+            rotated = RotateAroundXInDegrees(rotated, _RotationX + _ZoomShiftY*_AutoShiftRotationXNudgeFactor + _Zoom*_RotationShiftX);
             o.vertex = UnityObjectToClipPos(rotated);
             o.texcoord = v.vertex.xyz;
 #ifdef _MAPPING_6_FRAMES_LAYOUT
@@ -319,9 +324,9 @@ SubShader {
 #else
             float2 tc = ToRadialCoords(i.texcoord);
             if (tc.x > i.image180ScaleAndCutoff[1])
-                return half4(0,0,0,1);
+                return half4(0,0,0,0);
             if (tc.x < 0.48-i.image180ScaleAndCutoff[1])
-                return half4(0,0,0,1);
+                return half4(0,0,0,0);
 
             tc.x = fmod(tc.x*i.image180ScaleAndCutoff[0], 6);
             // Note: below is mine
@@ -358,12 +363,12 @@ SubShader {
                 tc.x += _NudgeX - round(_Zoom*(0.11111+_ZoomShiftX*0.5) * 1000)/1000; // headset movement compensation, with centering term! (was 9, ~0.11111)
 
             if (_VideoIndex == 1)
-                tc.y -= _NudgeY + round(_Zoom*(0.2+_ZoomShiftY*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 5, 0.2)
+                tc.y -= _NudgeY + round(_Zoom*(0.2+(_ZoomShiftY)*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 5, 0.2)
 //            else if (_VideoIndex == 0)
 //              tc.y -= _NudgeY + round(_Zoom*(0.25+_ZoomShiftX*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 4, 0.25)
             else
                 // I think this should about around 0.135, based on the Ryoukan clip
-                tc.y -= _NudgeY + round(_Zoom*(0.135+_ZoomShiftY*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 8, 0.25)
+                tc.y -= _NudgeY + round(_Zoom*(0.135+(_ZoomShiftY)*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 8, 0.25)
 
             if (_VideoIndex == 1)
                tc.y = 1.00 - tc.y;
@@ -679,6 +684,7 @@ SubShader {
               /* was 1.5, 2.5 for a while: */
               tex.a = pow(colorMask*1.75, 2.25) * maxAlpha;
               //tex.rgb = HSVtoRGB(_ColorTestArray[0]);
+               //return colorMask;
           }
 
  //         if (tc.y > 0)

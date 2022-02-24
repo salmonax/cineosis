@@ -206,7 +206,7 @@ public class ClipManager : MonoBehaviour
 
     private Material handMat;
 
-    private bool _useAutoShiftMode = false;
+    public bool useAutoShiftMode = false;
 
     private float _isDifferenceMaskEnabled; // overrides _UseDifferenceMask in shader
 
@@ -320,7 +320,7 @@ public class ClipManager : MonoBehaviour
 
     public void ToggleAutoShiftMode()
     {
-        _useAutoShiftMode = !_useAutoShiftMode;
+        useAutoShiftMode = !useAutoShiftMode;
     }
 
     //Save save = new Save();
@@ -531,6 +531,16 @@ public class ClipManager : MonoBehaviour
         return System.Math.Round(skyboxMat.GetFloat(label), sigs).ToString("0.00");
     }
 
+    public void togglePlayerThrottle(float amount)
+    {
+        if (clipPool.current.playbackSpeed == amount)
+        {
+            clipPool.current.playbackSpeed = 1;
+            return;
+        }
+        clipPool.current.playbackSpeed = amount;
+    }
+
     // Update is called once per frame
     void Update()
     {
@@ -541,43 +551,27 @@ public class ClipManager : MonoBehaviour
         {
             //OVRPose head = OVRManager.tracker.GetPose();
             Vector3 head = GameObject.Find("CenterEyeAnchor").transform.position;
-            Vector3 headRot = GameObject.Find("CenterEyeAnchor").transform.position; // woops, incorrect; leaving for now
+            Vector3 headRot = GameObject.Find("CenterEyeAnchor").transform.localEulerAngles;
 
-            Vector3 betterRot = GameObject.Find("CenterEyeAnchor").transform.localEulerAngles;
+            float effectivePitch = headRot.x - (headRot.x > 180 ? 360 : 0) + skyboxMat.GetFloat("_RotationX"); // not right, but works here
+            var ePitchRad = effectivePitch * Mathf.PI / 180;
 
-            float effectivePitch = betterRot.x - (betterRot.x > 180 ? 360 : 0) + skyboxMat.GetFloat("_RotationX"); // not right, but works here
-
-            Vector3 otherRot = GameObject.Find("CenterEyeAnchor").transform.eulerAngles;
-
-            // ONLY keeping this here for the print out; logic moved to Outliner.cs
-            Vector3 hand = GameObject.Find("RightControllerAnchor").transform.position;
-
-            //debugText.text = head.x.ToString() + ' ' + head.y.ToString() + ' ' + head.z.ToString();
-
-            //debugText.text = skyboxMat.GetFloat("_HorizontalOffset").ToString() + " " + skyboxMat.GetFloat("_ZoomNudgeFactor").ToString() + " " + skyboxMat.GetFloat("_ZoomAdjustNudgeFactor").ToString();
-
-            
-
-            // NOTE: these are ALL wired up already; just need to comment/uncomment
-
-            var vRot = skyboxMat.GetFloat("_RotationX"); // simply change vRot to *effective pitch! No big deal!
+            var vRot = skyboxMat.GetFloat("_RotationX");
             var vRotRad = vRot * Mathf.PI / 180;
-            //yc = Mathf.Cos(vRotRad) * head.y + Mathf.Sin(vRotRat) * head.z;
-            //zc = Mathf.Sin(vRotRat) * head.y - Mathf.Cos(vRotRad) * head.z;
-
-
-            // Note: incorrect! it's spitting out nonsense right now! Debug!
-            // in the New Scheme, vRotRad refers to the *effective pitch*, which we already
-            // have.
+            
             var zc = Mathf.Sin(vRotRad) * head.y + Mathf.Cos(vRotRad) * head.z;
             var yc = Mathf.Cos(vRotRad) * head.y - Mathf.Sin(vRotRad) * head.z;
+
+            //var zc = Mathf.Sin(ePitchRad) * head.y + Mathf.Cos(ePitchRad) * head.z;
+            //var yc = Mathf.Cos(ePitchRad) * head.y - Mathf.Sin(ePitchRad) * head.z;
 
             // "Nudge" refers to head-tracking nudge.
             skyboxMat.SetFloat("_NudgeX", head.x * skyboxMat.GetFloat("_NudgeFactorX"));//skyboxMat.GetFloat("_ZoomNudgeFactor")); // 0.25 originally; left-right compensation
             skyboxMat.SetFloat("_NudgeY", -yc * skyboxMat.GetFloat("_NudgeFactorY"));//skyboxMat.GetFloat("_ZoomAdjustNudgeFactor")); // 0.25 or 0.5; up-down compensation
 
             // These should really be called ZoomeNudge and ZoomeAdjustNudge, and BaseZoom should just be "Zoom"
-            skyboxMat.SetFloat("_Zoom", -zc * skyboxMat.GetFloat("_ZoomNudgeFactor") + skyboxMat.GetFloat("_BaseZoom")); // mul 4 originally, by itself
+            var zoom = -zc * skyboxMat.GetFloat("_ZoomNudgeFactor") + skyboxMat.GetFloat("_BaseZoom");
+            skyboxMat.SetFloat("_Zoom", zoom); // mul 4 originally, by itself
 
             // Note: there's no BaseZoomAdjustNudge, as it distorts the image.
             skyboxMat.SetFloat("_ZoomAdjust", Mathf.Max(zc * skyboxMat.GetFloat("_ZoomAdjustNudgeFactor"), 0)); // 0.5f originally
@@ -585,9 +579,26 @@ public class ClipManager : MonoBehaviour
 
             // JUST A DEMO! This kind of sucks and might be doing a bit too much:
             // Also, because it's from dead-reckoning, it depends on the fake zc/yc above :~(
-            if (_useAutoShiftMode)
+
+            // First dead-reckoning, based on absolute scene rotation, less precision about zooming to exactly -1.0. 
+            //float autoShiftPartialFactor = -0.00623f * effectivePitch + 0.0745f; // 0.135 + autoShiftPartialFactor * 0.5
+            // Second dead-reckoning, after "fixing" zc/zy, based on *effective rotation*:
+            float autoShiftPartialFactor = (-0.006895f * effectivePitch + 0.09848f);
+
+            // Third dead-reckoning, with low-end terms calibrated to less-exaggerated width:
+            // (Note: pretty bogus with the new term; lots of bottom-stretch distortion)
+            //float autoShiftPartialFactor = (-0.0066144f * effectivePitch + 0.11484f);
+
+            if (useAutoShiftMode)
             {
-                skyboxMat.SetFloat("_ZoomShiftY", -0.00623f * effectivePitch + 0.0745f);
+                skyboxMat.SetFloat("_AutoShiftRotationXNudgeFactor", -93.375f * zoom + 3.719f);
+                // Note: ZoomShiftY get "left" when leaving AutoShiftMode. It doubles as a calibrator, and it seems
+                //  to work pretty well in that capacity.
+                skyboxMat.SetFloat("_ZoomShiftY", autoShiftPartialFactor); // named like this because it's an unnecessary mangle
+            } else
+            {
+                skyboxMat.SetFloat("_AutoShiftRotationXNudgeFactor", 0);
+                skyboxMat.SetFloat("_RotationZoomShiftX", 0); // named like this because it's an unnecessary mangle
             }
 
             // Ugh, to deal with the flip. What a mess.
@@ -624,12 +635,14 @@ public class ClipManager : MonoBehaviour
                 ClipProvider.GetFolder() + " |\n|" +
                 System.Math.Round(laser.maxLength, 2).ToString("0.00") + "|" +
                 System.Math.Round(zc, 2).ToString("0.00") + "," +
-                System.Math.Round(yc, 2).ToString("0.00") + "|\n|TERMS|" +
-                System.Math.Round(betterRot.x, 2).ToString("0.00") + " | " +
-                System.Math.Round(effectivePitch, 2).ToString("0.00") + " | " +
-                guiLabel("_RotationX", 2) + "|\n|" +
+                System.Math.Round(yc, 2).ToString("0.00") + "|" +
+                System.Math.Round(headRot.x, 2).ToString("0.00") + " | " +
+                System.Math.Round(effectivePitch, 2).ToString("0.00") + " |\n| " +
+                zoom * (0.135 + autoShiftPartialFactor * 0.5) + " |\n| " +
+                guiLabel("_AutoShiftRotationXNudgeFactor", 2) + " |\n|" +
                 guiLabel("_ZoomShiftX", 2) + ", " +
                 guiLabel("_ZoomShiftY", 2) + " |\n| " +
+                guiLabel("_RotationShiftX", 2) + " |\n| " +
                 //System.Math.Round(lineEndScreen.x, 3) + " " +
                 //System.Math.Round(lineEndScreen.y, 3) + " " +
                 //System.Math.Round(lineEndScreen.z, 3) + " | " +

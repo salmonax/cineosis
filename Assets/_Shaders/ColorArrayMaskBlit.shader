@@ -121,11 +121,25 @@ Shader "Unlit/ColorArrayMaskBlit"
                         //output.rgb = float3(1,1,1);
                     }   
                     if (_LeftColorExclusionArray[i].r >= 0) {
-                        float3 excludeColor = rgb2lrgb(_LeftColorExclusionArray[i]);
+                        float3 excludeColor = _LeftColorExclusionArray[i];
+
+                        //float includeSwatchDist = ColorDistance(includeColor, tex);
+                        //float includeSwatchDist = abs(RGBtoHCV(includeColor).x - RGBtoHCV(tex).x);
+
+                        float excludeSwatchDist = abs(excludeColor.x - texHSV.x);
+                        float valueDistance = abs(excludeColor.z - texHSV.z);
+                        //float excludeSwatchDist = cie76(rgb2lab(excludeColor), texLab);
+                        //min(pow((excludeColor.z+texHSV.z)/2/0.2, 8), 1)
+
+                        if (excludeSwatchDist < _TestX*pow(screenThresh*2,1.25))
+                            output.rgb -= float3(_TestY,_TestY,_TestY);
+
+
+                        //float3 excludeColor = rgb2lrgb(_LeftColorExclusionArray[i]);
 
                         //float excludeSwatchDist = abs(RGBtoHSV(excludeColor).x - RGBtoHSV(tex).x);
 
-                        float excludeSwatchDist = cie76(rgb2lab(excludeColor), texLab);
+                        //float excludeSwatchDist = cie76(rgb2lab(excludeColor), texLab);
 
                         //if (excludeSwatchDist < 0.06)
 

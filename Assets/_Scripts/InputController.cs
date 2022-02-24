@@ -10,6 +10,7 @@ public enum ExtraMode
     ResizeFactorAndResize, // 3
     SwatchPicker, // 4
     ZoomShiftXY, //5
+    PlaybackThrottle,
 }
 
 // Not using yet, but probably will; useful to document
@@ -63,6 +64,8 @@ public class InputController
             }
         }
 
+        // Assign trigger combinations to enums. This was as terse as I could get it,
+        // and only confusing if I think too hard about it:
         triggerMode =
             RightController.BothTriggers ? TriggerMode.TransparencyAndExposure :
             RightController.IndexTrigger ? TriggerMode.ZoomCompAndZoomAdjustComp :
@@ -80,23 +83,28 @@ public class InputController
         switch (triggerMode)
         {
             case TriggerMode.None:
-                // First, deal with buttons
-                if (RightController.ButtonOne)_ctx.togglePlaying();
+                // First, deal with buttons, globally
+                // ButtonTwo is on top, ButtonOne is underneath
                 if (RightController.ButtonTwo) _ctx.playNextClip();
+                if (RightController.ButtonOne)_ctx.togglePlaying();
                 if (RightController.ThumbstickButton) _ctx.resetProps();
+
+                // If applicable, deal with extraMode specific buttons here.
 
                 // Then, thumbstick
                 if (RightController.ThumbstickAnyX) _ctx.offsetProp("_RotationY", -thumb.x, -180, 180);
                 if (RightController.ThumbstickAnyY) _ctx.offsetProp("_RotationX", thumb.y, -180, 180);
                 break;
 
-            case TriggerMode.TransparencyAndExposure: // both triggers
-                // These are top to bottom on the controller:
+            case TriggerMode.TransparencyAndExposure: // BOTH TRIGGERS
+                // Global buttons
                 if (RightController.ButtonTwo) ToggleMode(ExtraMode.ZoomAndHorizontalOffset);
                 if (RightController.ButtonOne) ToggleMode(ExtraMode.ResizeFactorAndResize);
 
 
-                // ExtraMode local buttons
+                // ExtraMode-specific buttons
+                // Note: button behavior has the switch on the outside
+                // (Thumbstick behavior is the other way around)
                 switch (extraMode)
                 {
                     case ExtraMode.None:
@@ -135,14 +143,28 @@ public class InputController
                     }
                 break;
 
-            case TriggerMode.ZoomCompAndZoomAdjustComp: // index trigger
-                if (RightController.ButtonTwo) ToggleMode(ExtraMode.NudgeXY);
-                if (RightController.ButtonOne) ToggleMode(ExtraMode.ZoomShiftXY);
-                    if (RightController.ThumbStickMostlyX) // Disallow diagonals
+            case TriggerMode.ZoomCompAndZoomAdjustComp: // INDEX TRIGGER
+                if (RightController.ThumbstickButton) ToggleMode(ExtraMode.PlaybackThrottle);
+
+                // Extra-mode specific
+                switch (extraMode)
+                {
+                    case ExtraMode.None:
+                    case ExtraMode.ZoomShiftXY:
+                        if (RightController.ButtonTwo) ToggleMode(ExtraMode.NudgeXY);
+                        if (RightController.ButtonOne) ToggleMode(ExtraMode.ZoomShiftXY);
+                        break;
+                    case ExtraMode.PlaybackThrottle:
+                        if (RightController.ButtonTwo) _ctx.togglePlayerThrottle(-1.5f);
+                        if (RightController.ButtonOne) _ctx.togglePlayerThrottle(1.5f);
+                        break;
+                }
+                
+                if (RightController.ThumbStickMostlyX) // Disallow diagonals
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.offsetProp("_ZoomNudgeFactor", thumb.x * 0.1f, 0, 6); // Zoom
+                            _ctx.offsetProp("_ZoomNudgeFactor", thumb.x * 0.1f, 0, 6); // Zoom? I think this is horizontal offset.. Not used anymore?!
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.offsetProp("_NudgeFactorX", thumb.x * 0.01f, 0, 1);
@@ -151,6 +173,8 @@ public class InputController
                             _ctx.offsetProp("_ZoomShiftX", thumb.x * 0.02f, -1, 1);
                             break;
                     }
+
+
                 if (RightController.ThumbstickMostlyY)
                     switch (extraMode)
                     {
@@ -161,12 +185,19 @@ public class InputController
                             _ctx.offsetProp("_NudgeFactorY", thumb.y * 0.01f, 0, 1);
                             break;
                         case ExtraMode.ZoomShiftXY:
-                            _ctx.offsetProp("_ZoomShiftY", thumb.y * 0.02f, -1, 1);
+                            // Note: AutoShiftMode controls _ZoomShiftY and makes delicate calculations
+                            // that are broken by user-augmentation of the term, so the same button is
+                            // switched to RotationShift, which performs a similar function.
+                            // It is currently NOT linked to ConfigSettings, however.
+                            if (_ctx.useAutoShiftMode)
+                                _ctx.offsetProp("_RotationShiftX", -thumb.y, -180, 180);
+                            else
+                                _ctx.offsetProp("_ZoomShiftY", thumb.y * 0.02f, -1, 1);
                             break;
                     }
                 break;
 
-            case TriggerMode.HorizontalOffsetCompAndSaturation: // hand trigger
+            case TriggerMode.HorizontalOffsetCompAndSaturation: // HAND TRIGGER
                 // TriggerMode global buttons
                 if (RightController.ButtonOne)
                 {
@@ -175,7 +206,7 @@ public class InputController
                 }
                 if (RightController.ButtonTwo) _ctx.ToggleMask(); // not an extra mode! debug only
 
-                // ExtraMode local buttons
+                // ExtraMode local buttons.
                 switch(extraMode)
                 {
                     case ExtraMode.None:
@@ -183,20 +214,27 @@ public class InputController
                             _ctx.outliner.enabled = !_ctx.outliner.enabled;
                         break;
                     case ExtraMode.SwatchPicker:
+                        if (RightController.ThumbstickStopX)
+                            _ctx.swatchDetector.Pause();
                         if (RightController.ThumbstickButton)
                             _ctx.swatchDetector.MakeFreshSwatches();
                         break;
                 }
                 
-                
+                // ExtraMode-relative thumbstick behavior
                 if (RightController.ThumbStickMostlyX)
                     switch (extraMode)
                     {
                         case ExtraMode.None:
+                            //_ctx.offsetProp("_AutoShiftRotationXNudgeFactor", -thumb.x * 0.5f, -360, 360);
                             _ctx.offsetProp("_HorizontalOffsetNudgeFactor", thumb.x * 0.05f, 0, 1); // Horizontal Offset Factor
                             break;
                         case ExtraMode.SwatchPicker:
-                            // Nothing yet; include and exclude mode should go here!
+                            if (RightController.ThumbstickStartX)
+                                if (RightController.ThumbstickMagnitude.x > 0)
+                                    _ctx.swatchDetector.UseInclusionMode();
+                                else
+                                    _ctx.swatchDetector.UseExclusionMode();
                             break;
                     }
                 if (RightController.ThumbstickMostlyY)
@@ -216,9 +254,9 @@ public class InputController
         if (Input.GetKeyDown(KeyCode.I))
             _ctx.swatchDetector.MakeFreshSwatches();
         if (Input.GetKeyDown(KeyCode.O))
-            _ctx.swatchDetector.Toggle(false);
+            _ctx.swatchDetector.Toggle(SwatchPickerMode.Exclusion);
         if (Input.GetKeyDown(KeyCode.P))
-            _ctx.swatchDetector.Toggle(true);
+            _ctx.swatchDetector.Toggle(SwatchPickerMode.Inclusion);
         if (Input.GetKeyDown(KeyCode.M))
             ClipConfig.Save(_ctx.clipConfigs);
         if (Input.GetKeyDown(KeyCode.W))

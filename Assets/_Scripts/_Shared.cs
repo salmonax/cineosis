@@ -47,7 +47,8 @@ public class FrameSkipper
 // Syntactic sugar for OVRInput
 public class RightController
 {
-    private static Vector2 _axes;
+    private static Vector2 _axes = new Vector2(0, 0);
+    private static Vector2 _lastAxes;
     private static float _handTrigger;
     private static float _indexTrigger;
     private static float _handTriggerLast;
@@ -55,6 +56,7 @@ public class RightController
 
     public static void Update()
     {
+        _lastAxes = _axes;
         _axes = OVRInput.Get(OVRInput.Axis2D.SecondaryThumbstick);
         _handTriggerLast = _handTrigger;
         _indexTriggerLast = _indexTrigger;
@@ -121,7 +123,7 @@ public class RightController
     {
         get => _axes.x == 0 && _axes.y == 0;
     }
-    public static bool ThumbStickOblique
+    public static bool ThumbStickOblique // Hmm, maybe rename
     {
         get => _axes.x != 0 && _axes.y != 0;
     }
@@ -133,7 +135,22 @@ public class RightController
     {
         get => !ThumbStickCentered && Mathf.Abs(_axes.x) <= Mathf.Abs(_axes.y);
     }
-
+    public static bool ThumbstickStartX
+    {
+        get => _axes.x != 0 && _lastAxes.x == 0;
+    }
+    public static bool ThumbstickStartY
+    {
+        get => _axes.y != 0 && _lastAxes.y == 0;
+    }
+    public static bool ThumbstickStopX
+    {
+        get => _axes.x == 0 && _lastAxes.x != 0;
+    }
+    public static bool ThumbstickStopY
+    {
+        get => _axes.y == 0 && _lastAxes.y != 0;
+    }
     public static bool ThumbstickAnyX
     {
         get => _axes.x != 0;

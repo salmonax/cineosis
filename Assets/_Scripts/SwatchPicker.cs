@@ -25,8 +25,6 @@ public class ColorSmith
 
 public class ColorWarden
 {
-    int _inclusionsCursor = 0;
-    int _exclusionsCursor = 0;
     int _segmentLength;
     int _maxFreqWeight; // The maximum weight to give extant values
 
@@ -59,37 +57,40 @@ public class ColorWarden
         //return _inclusionsCursor;
     }
 
-    public void Include(Color color)
+    void _Insert(Color color, Color[] samples, int[] samplesFreq, int addedFreq = 1)
     {
-        //_inclusions[_inclusionsCursor] = ToHSV(color);
-
         Color hsvColor = ToHSV(color);
         int hueIndex = HueToIndex(hsvColor);
 
-        float currentHue = _inclusions[hueIndex].r;
-        float clampedFreq = System.Math.Min(_inclusionsFreq[hueIndex], _maxFreqWeight);
+        float currentHue = samples[hueIndex].r;
+        float clampedFreq = System.Math.Min(samplesFreq[hueIndex], _maxFreqWeight);
 
         float averageHue = (currentHue * clampedFreq + hsvColor.r) / (clampedFreq + 1);
         hsvColor.r = averageHue;
 
-        _inclusions[hueIndex] = hsvColor;
+        samples[hueIndex] = hsvColor;
 
-        // This is to help with hair and other dark colors:
-        int weightedFreq = 1;
-        if (hsvColor.b < 0.25) weightedFreq = 2;
+        // This is to help with hair and other dark colors, for inclusions only:
+        if (samples == _inclusions)
+        {
+            if (hsvColor.b < 0.25) addedFreq *= 2;
+            _exclusionsFreq[hueIndex] = 0;
+        }
+        else
+        {
+            _inclusionsFreq[hueIndex] = 0;
+        }
 
-        _inclusionsFreq[hueIndex] = _inclusionsFreq[hueIndex] + weightedFreq;
+        samplesFreq[hueIndex] += addedFreq;
 
         Debug.Log("Hover Color: " + hsvColor);
-
-        _inclusionsCursor = (_inclusionsCursor + 1) % _segmentLength;
     }
 
-    public void Exclude(Color color)
-    {
-        _exclusions[_exclusionsCursor] = ToHSV(color);
-        _exclusionsCursor = (_exclusionsCursor + 1) % _segmentLength;
-    }
+    public void Include(Color color) =>
+        _Insert(color, _inclusions, _inclusionsFreq);
+
+    public void Exclude(Color color) =>
+        _Insert(color, _exclusions, _exclusionsFreq);
 
     public void Reset()
     {
@@ -105,27 +106,28 @@ public class ColorWarden
 
     public Color[] Inclusions
     {
-        get
-        {
-            _inclusionsFreq.CopyTo(_sortedFreqs, 0);
-            _inclusions.CopyTo(_sortedColors, 0);
-            System.Array.Sort(_sortedFreqs, _sortedColors, 0, _sampleLength);
-            System.Array.Copy(
-                _sortedColors,
-                _sampleLength - _segmentLength,
-                _outputColors,
-                0,
-                _segmentLength
-            );
-            //Debug.Log(_outputColors[0] + " " + _outputColors[39]);
-            //Debug.Log(_sortedFreqs[_sampleLength-_segmentLength] + " " + _sortedFreqs[_sampleLength - _segmentLength/2]  +  " " + _sortedFreqs[_sampleLength-1]);
-            return _outputColors;
-        }
+        get => GetOutputSamples(_inclusions, _inclusionsFreq);
     }
-
     public Color[] Exclusions
     {
-        get => _exclusions;
+        get => GetOutputSamples(_exclusions, _exclusionsFreq);
+    }
+
+    public Color[] GetOutputSamples(Color[] samples, int[] samplesFreq) 
+    {
+        samplesFreq.CopyTo(_sortedFreqs, 0);
+        samples.CopyTo(_sortedColors, 0);
+        System.Array.Sort(_sortedFreqs, _sortedColors, 0, _sampleLength);
+        System.Array.Copy(
+            _sortedColors,
+            _sampleLength - _segmentLength,
+            _outputColors,
+            0,
+            _segmentLength
+        );
+        //Debug.Log(_outputColors[0] + " " + _outputColors[39]);
+        Debug.Log(_sortedFreqs[_sampleLength -_segmentLength] + " " + _sortedFreqs[_sampleLength - _segmentLength/2]  +  " " + _sortedFreqs[_sampleLength-1]);
+        return _outputColors;
     }
 
     public ColorWarden(int segmentLength, int sampleLength = 512, int maxFreqWeight = 10)
@@ -152,6 +154,14 @@ public class ColorWarden
     }
 }
 
+public enum SwatchPickerMode
+{
+    Disabled,
+    Inclusion,
+    Exclusion,
+    Paused,
+}
+
 public class SwatchPicker : MonoBehaviour
 {
     Camera _tempCam;
@@ -169,8 +179,7 @@ public class SwatchPicker : MonoBehaviour
     UnityEngine.UI.Text debugText;
     // Start is called before the first frame update
 
-    Material dummyMaterial;
-    bool _isIncludeMode = true;
+    SwatchPickerMode _mode = SwatchPickerMode.Disabled;
 
     Color[] leftInclusionColors;
     Color[] leftExclusionColors;
@@ -207,9 +216,6 @@ public class SwatchPicker : MonoBehaviour
 
         debugText = GameObject.Find("DebugText").GetComponent<UnityEngine.UI.Text>();
 
-        // Something to test a blit with:
-        dummyMaterial = Resources.Load<Material>("DummyMaterial");
-
         Disable(); // start off!
     }
 
@@ -230,15 +236,17 @@ public class SwatchPicker : MonoBehaviour
 
     public void Disable()
     {
+        _mode = SwatchPickerMode.Disabled;
         line.enabled = false;
         RenderTexture.active = null;
         swatchContainer.SetActive(false);
         // maybe release preRenderTex here
     }
 
-    public void Enable(bool shouldUseInclusion)
+    public void Enable(SwatchPickerMode startingMode = SwatchPickerMode.Paused)
     {
-        _isIncludeMode = shouldUseInclusion;
+        _mode = startingMode;
+        //_isIncludeMode = shouldUseInclusion;
         line.enabled = true;
         clipManager.sizingBar.SetActive(false);
         clipManager.debugContainer.SetActive(false);
@@ -249,21 +257,32 @@ public class SwatchPicker : MonoBehaviour
         //camera.targetTexture = null;
     }
 
-    public void Toggle(bool shouldUseInclusion = true)
+    public void Toggle(SwatchPickerMode startingMode = SwatchPickerMode.Paused) // this param is deprecated!
     {
-        if (shouldUseInclusion != _isIncludeMode)
+        if (_mode != startingMode)
         {
-            Enable(shouldUseInclusion);            
+            Enable(startingMode);            
         } else
         {
             if (line.enabled) Disable();
-            else Enable(shouldUseInclusion);
+            else Enable(startingMode);
         }
     }
 
     bool IsDetectorActive()
     {
-        return line.enabled;
+        return line.enabled; // NOTE: Paused is considered "active".
+    }
+
+    public void UseInclusionMode() =>
+        _mode = SwatchPickerMode.Inclusion;
+    public void UseExclusionMode() =>
+        _mode = SwatchPickerMode.Exclusion;
+
+    public void Pause()
+    {
+        if (!line.enabled) return;
+        _mode = SwatchPickerMode.Paused;
     }
 
     Material colorMaskMat;
@@ -273,7 +292,7 @@ public class SwatchPicker : MonoBehaviour
         _colorWarden.Reset();
         colorMaskMat.SetFloat("_ColorArrayLength", _colorWarden.Inclusions.Length);
         colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
-        colorMaskMat.SetColorArray("_LeftColorArray", _colorWarden.Exclusions);
+        colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
         //if (clipManager.clipPool.current.isPaused)
           //  clipManager.RenderColorMaskTick(clipManager.lastSource);   
     }
@@ -345,11 +364,11 @@ public class SwatchPicker : MonoBehaviour
     // Can probably move the following to OnRenderImage()
 
     int curFrame = -1;
-    int frameSkip = 6;
+    int frameSkip = 4;
 
     private void OnPostRender()
     {
-        if (IsDetectorActive())
+        if (IsDetectorActive()) // false when SwatchPickerMode.Paused
         {
             curFrame = (curFrame + 1) % (frameSkip + 1); // wraps around
 
@@ -377,26 +396,35 @@ public class SwatchPicker : MonoBehaviour
             if (camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left ||
                 camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Mono)
             {
-                if (_isIncludeMode)
+                swatchMaterialLeft.color = pixelTexture.GetPixel(0, 0);
+                if (_mode == SwatchPickerMode.Inclusion)
                 {
-                    swatchMaterialLeft.color = pixelTexture.GetPixel(0, 0);
                     _colorWarden.Include(swatchMaterialLeft.color);
                     colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
                 }
-                else
+                else if (_mode == SwatchPickerMode.Exclusion) // just for clarity
                 {
-                    swatchMaterialLeft.color = pixelTexture.GetPixel(0, 0);
                     _colorWarden.Exclude(swatchMaterialLeft.color);
+                    // On purpose for now:
                     colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
                 }
 
+                // Only do this once per two-eye render cycle; left eye is fine:
                 if (clipManager.clipPool.current.isPaused)
                     clipManager.RenderColorMaskTick(clipManager.lastSource);
-            } else // Not really using, but might as well render the right swatch:
+            } else 
             {
                 swatchMaterialRight.color = pixelTexture.GetPixel(0, 0);
-                _colorWarden.Include(swatchMaterialRight.color);
-                colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
+                if (_mode == SwatchPickerMode.Inclusion)
+                {
+                    _colorWarden.Include(swatchMaterialRight.color);
+                    colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
+                } else if (_mode == SwatchPickerMode.Exclusion) // for clarity
+                {
+                    _colorWarden.Exclude(swatchMaterialRight.color);
+                    colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
+                }
+
             }
         }
     }
