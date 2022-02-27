@@ -3,6 +3,7 @@ Shader "Unlit/ColorArrayMaskBlit"
     Properties
     {
         _MainTex ("Mini Panorama", 2D) = "white" {}
+        _DynAlphaTex("Dynamic Alpha Tex", 2D) = "white" {}
         _TestX("Matte Threshold X", Range(0, 1)) = 0.01
         _TestY("Matte Threshold Y", Range(0, 1)) = 1
          TestZ("Matte Threshold Z", Range(0.2, 8)) = 0.3
@@ -39,6 +40,7 @@ Shader "Unlit/ColorArrayMaskBlit"
             };
 
             sampler2D _MainTex;
+            sampler2D _DynAlphaTex;
             float4 _MainTex_ST;
             float4 _MainTex_TexelSize;
             float3 _LeftColorExclusionArray[40];
@@ -84,6 +86,7 @@ Shader "Unlit/ColorArrayMaskBlit"
             {
                 // sample the texture
                 fixed4 tex = tex2D(_MainTex, i.uv);
+                fixed4 dynAlpha = tex2D(_DynAlphaTex, i.uv);
                 float3 texLab = rgb2lab(tex);
             
 //              return tex;
@@ -112,11 +115,20 @@ Shader "Unlit/ColorArrayMaskBlit"
                         //float includeSwatchDist = ColorDistance(includeColor, tex);
                         //float includeSwatchDist = abs(RGBtoHCV(includeColor).x - RGBtoHCV(tex).x);
 
-                        float includeSwatchDist = abs(includeColor.x - texHSV.x);
-                        float valueDistance = abs(includeColor.z - texHSV.z);
+                        float includeSwatchDist = pow(includeColor.x - texHSV.x,2);
+                        //float satDist = pow(includeColor.y - texHSV.y, 2);
+
+                        float valueDist = pow(includeColor.z - texHSV.z, 2);
+
+                        //float miracleCure = sqrt(includeSwatchDist + valueDist*0.004)*min((includeColor.z+texHSV.z*4)/5/0.1, 1);
+
+                        float miracleCure = sqrt(includeSwatchDist)*min((includeColor.z+texHSV.z*4)/5/0.2, 1);
                         //float includeSwatchDist = cie76(rgb2lab(includeColor), texLab);
                         //min(pow((includeColor.z+texHSV.z)/2/0.2, 8), 1)
-                        if (includeSwatchDist < _TestX*pow(1-screenThresh, min(pow(includeColor.z/0.4, 0.5), 1)*8))
+
+                        if (miracleCure < _TestX*pow(1-screenThresh, 8) ||
+                            miracleCure < dynAlpha.r/10 // was 20 for a second
+                        )
                             output.rgb += float3(_TestY,_TestY,_TestY);
                         //output.rgb = float3(1,1,1);
                     }   
@@ -126,12 +138,15 @@ Shader "Unlit/ColorArrayMaskBlit"
                         //float includeSwatchDist = ColorDistance(includeColor, tex);
                         //float includeSwatchDist = abs(RGBtoHCV(includeColor).x - RGBtoHCV(tex).x);
 
-                        float excludeSwatchDist = abs(excludeColor.x - texHSV.x);
-                        float valueDistance = abs(excludeColor.z - texHSV.z);
+                        float excludeSwatchDist = pow(excludeColor.x - texHSV.x,2);
+                        float valueDist = pow(excludeColor.z - texHSV.z, 2);
+                        float miracleCure = sqrt(excludeSwatchDist + valueDist*0.005);
                         //float excludeSwatchDist = cie76(rgb2lab(excludeColor), texLab);
                         //min(pow((excludeColor.z+texHSV.z)/2/0.2, 8), 1)
 
-                        if (excludeSwatchDist < _TestX*pow(screenThresh*2,1.25))
+                        if (miracleCure < _TestX*pow(screenThresh*2,1.25) ||
+                            miracleCure < (1-dynAlpha.r)/10
+                        )
                             output.rgb -= float3(_TestY,_TestY,_TestY);
 
 

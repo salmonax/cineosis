@@ -6,7 +6,7 @@ using UnityEngine;
 public class ClipConfig
 {
     // Manually increment this when changing the format!
-    public int version = 27;
+    public int version = 28;
 
     // Note on the properties:
     //  1) The default values will override the Skybox Material properties
@@ -41,6 +41,7 @@ public class ClipConfig
     // Color settings
     public float _Saturation = 1;
     public float _Exposure = 0.6f;
+    public float _Contrast = 1;
 
     public float _Transparency = 1;
 

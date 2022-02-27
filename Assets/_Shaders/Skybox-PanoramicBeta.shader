@@ -12,6 +12,7 @@ Properties {
     _Transparency ("Transparency", Range(0, 1)) = 0.2
     _Saturation ("Saturation", Range(0, 1)) = 0.0
     [Gamma] _Exposure ("Exposure", Range(0, 8)) = 1.0
+    _Contrast ("Contrast", Range(0, 2)) = 1.0
     _RotationX ("Rotation X", Range(-180, 180)) = 0
     _RotationY ("Rotation Y", Range(-180, 180)) = 0
     _HorizontalOffset ("Horizontal Offset", Range(-1.5, 1.5)) = 0
@@ -37,9 +38,11 @@ Properties {
     [NoScaleOffset] _LastTex3 ("LAST Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _AlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _DynAlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
+    [NoScaleOffset] _TestTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
 
     [NoScaleOffset]  SmallFrameTex ("Small Frame Tex Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _ColorMaskAlphaTex ("Color Mask Spherical Texture (HDR)", 2D) = "grey" {}
+    [NoScaleOffset] _ScreenSpaceHelperTex ("ScreenHelper Spherical Texture (HDR)", 2D) = "grey" {}
 
     [KeywordEnum(6 Frames Layout, Latitude Longitude Layout)] _Mapping("Mapping", Float) = 1
     [Enum(360 Degrees, 0, 180 Degrees, 1)] _ImageType("Image Type", Float) = 0
@@ -66,6 +69,7 @@ SubShader {
         #include "./cginc/hsbe.cginc"
 
         float4 _ColorTest;
+        float2 _LaserCoord;
         float _AutoShiftRotationXNudgeFactor; // multiplied against ShiftY; should be 0 if autoshift is off
         float3 _ColorTestArray[1];
         int _ColorArrayLength;
@@ -82,6 +86,8 @@ SubShader {
         sampler2D _DynAlphaTex;
         sampler2D _ColorMaskAlphaTex;
         sampler2D _SmallFrameTex;
+        sampler2D _ScreenSpaceHelperTex;
+        sampler2D _TestTex;
         float4 _Tex_TexelSize;
         float4 _LastTex_TexelSize;
         float4 _AlphaTex_TexelSize;
@@ -89,6 +95,7 @@ SubShader {
         half4 _Tex_HDR;
         half4 _Tint;
         float _Transparency;
+        float _Contrast;
         half _Exposure;
         float _RotationX;
         float _RotationY;
@@ -113,6 +120,8 @@ SubShader {
         float _MatteThresholdR;
         float _MatteThresholdG;
         float _MatteThresholdB;
+        bool _UseScreenSpaceHelper;
+        bool _UseLight = 0;
 #ifndef _MAPPING_6_FRAMES_LAYOUT
         bool _MirrorOnBack;
         int _ImageType;
@@ -161,6 +170,10 @@ SubShader {
             float3 p = abs(frac(input.xxx + K.xyz) * 6.0 - K.www);
 
             return input.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), input.y);
+        }
+
+        float dist(float2 p0, float2 pf) {
+            return sqrt((pf.x-p0.x)*(pf.x-p0.x)+(pf.y-p0.y)*(pf.y-p0.y));
         }
 
         float ColorDistance(float3 e1, float3 e2)
@@ -497,14 +510,15 @@ SubShader {
                     tex.a += maxAlpha/6;
                 if (pow(d3, 0.33) > screenThresh)
                     tex.a += maxAlpha/6;
+                /*if (pow(d4, 0.33) > screenThresh)
+                    tex.a += maxAlpha/6;
+                if (pow(d5, 0.33) > screenThresh)
+                    tex.a += maxAlpha/6;
+                if (pow(d6, 0.33) > screenThresh)
+                    tex.a += maxAlpha/6;*/
             }
-/*
-            if (pow(d4, 0.33) > screenThresh)
-                tex.a = maxAlpha;
-            if (pow(d5, 0.33) > screenThresh)
-                tex.a = maxAlpha;
-            if (pow(d6, 0.33) > screenThresh)
-                tex.a = maxAlpha;*/
+                
+
 
 
             // Assumes left-right
@@ -633,13 +647,20 @@ SubShader {
 
             
             //tex.rgb *= _Exposure;
+
             if (_UseSwatchPickerMode == 1)
                 return smallFrame;
 
+            if (_UseScreenSpaceHelper == 1) {
+                return tex2D(_ScreenSpaceHelperTex, tc);
+            }
+
+            //return tex2D(_ScreenSpaceHelperTex, tc);
             
 
             exposure(tex, _Exposure);
             saturation(tex, _Saturation);
+            contrast(tex, _Contrast);
                 /* NOTE: it turns out that Hue and Chroma seem to
                  * work better for filtering */
 
@@ -682,14 +703,24 @@ SubShader {
 
           if (_UseDifferenceMask == 2) {
               /* was 1.5, 2.5 for a while: */
-              tex.a = pow(colorMask*1.75, 2.25) * maxAlpha;
+              tex.a = min(pow(colorMask*1.25, 1.75),1) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
+              //tex.a = min(colorMask*3,1) * maxAlpha;// pow(colorMask*1.5, 1.5) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
+              tex.rgb *= tex.a;
+
               //tex.rgb = HSVtoRGB(_ColorTestArray[0]);
                //return colorMask;
           }
 
- //         if (tc.y > 0)
-  //          tc.y -= 1;
+          //if (i.texcoord.x < 0.25 && i.texcoord.x > 0.25-_Tex_TexelSize.x*1000 && i.texcoord.y < 0.25 && i.texcoord.y > 0.25-_Tex_TexelSize.x*1000)
+            //tex.rgb = 1;
+          float pointLight = ((1-dist(float2(_LaserCoord.x/9.5,_LaserCoord.y/9.5), float2(i.texcoord.x*1.25, i.texcoord.y*1.25)))+0.5);
 
+          //return tex2D(_ScreenSpaceHelperTex, tc);
+
+          if (_UseLight == 1)
+            tex = float4(tex.rgb*(pow(pointLight/pow(_Exposure+0.05, 0.2), 7)+1), tex.a);
+
+          tex.a *= tex2D(_TestTex, tc).r;
           return tex;
           //return colorMask;
           //tex.a = pow((colorMask+dynAlpha/2)*(1-screenThresh),1.5);

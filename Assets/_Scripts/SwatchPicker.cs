@@ -3,163 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR;
 
-// Lower-case to mimic the shader style, which is mostly why this class exists.
-public class ColorSmith
-{
-    // Uh, unity has Color:linear, so not actually needed, but leaving for now.
-    public static Color rgb2lrgb(Color c)
-    {
-        Color lrgb = new Color();
-        lrgb.r = (c.r > 0.04045f) ? Mathf.Pow((c.r + 0.055f) / 1.055f, 2.4f) : c.r / 12.92f;
-        lrgb.g = (c.g > 0.04045f) ? Mathf.Pow((c.g + 0.055f) / 1.055f, 2.4f) : c.g / 12.92f;
-        lrgb.b = (c.b > 0.04045f) ? Mathf.Pow((c.b + 0.055f) / 1.055f, 2.4f) : c.b / 12.92f;
-        return lrgb;
-    }
-    public static Color rgb2hsv(Color c)
-    {
-        float H, S, V;
-        Color.RGBToHSV(c, out H, out S, out V);
-        return new Color(H, S, V);
-    }
-}
-
-public class ColorWarden
-{
-    int _segmentLength;
-    int _maxFreqWeight; // The maximum weight to give extant values
-
-    int _sampleLength;
-    float _span;
-
-    Color[] _inclusions;
-    int[] _inclusionsFreq;
-    Color[] _exclusions;
-    int[] _exclusionsFreq;
-
-    Color[] _sortedColors;
-    float[] _sortedFreqs;
-
-    Color[] _outputColors;
-
-    Color ToHSV(Color c)
-    {
-        // Unity normally seems to handle lrgb conversion on the way
-        // to the GPU; since we'll be sending them in HSV, we need to
-        // perform the conversion here.
-
-       
-        return ColorSmith.rgb2hsv(c.linear);
-    }
-
-    int HueToIndex(Color hsvColor)
-    {
-        return Mathf.FloorToInt(hsvColor.r / _span);
-        //return _inclusionsCursor;
-    }
-
-    void _Insert(Color color, Color[] samples, int[] samplesFreq, int addedFreq = 1)
-    {
-        Color hsvColor = ToHSV(color);
-        int hueIndex = HueToIndex(hsvColor);
-
-        float currentHue = samples[hueIndex].r;
-        float clampedFreq = System.Math.Min(samplesFreq[hueIndex], _maxFreqWeight);
-
-        float averageHue = (currentHue * clampedFreq + hsvColor.r) / (clampedFreq + 1);
-        hsvColor.r = averageHue;
-
-        samples[hueIndex] = hsvColor;
-
-        // This is to help with hair and other dark colors, for inclusions only:
-        if (samples == _inclusions)
-        {
-            if (hsvColor.b < 0.25) addedFreq *= 2;
-            _exclusionsFreq[hueIndex] = 0;
-        }
-        else
-        {
-            _inclusionsFreq[hueIndex] = 0;
-        }
-
-        samplesFreq[hueIndex] += addedFreq;
-
-        Debug.Log("Hover Color: " + hsvColor);
-    }
-
-    public void Include(Color color) =>
-        _Insert(color, _inclusions, _inclusionsFreq);
-
-    public void Exclude(Color color) =>
-        _Insert(color, _exclusions, _exclusionsFreq);
-
-    public void Reset()
-    {
-        Debug.Log("Trying to make fresh swatches, I guess.");
-        for (int i = 0; i < _sampleLength; i++)
-        {
-            _inclusions[i] = new Color(-1, -1, -1); // purposely initialize as invalid.
-            _inclusionsFreq[i] = 0;
-            _exclusions[i] = new Color(-1, -1, -1);
-            _exclusionsFreq[i] = 0;
-        }
-    }
-
-    public Color[] Inclusions
-    {
-        get => GetOutputSamples(_inclusions, _inclusionsFreq);
-    }
-    public Color[] Exclusions
-    {
-        get => GetOutputSamples(_exclusions, _exclusionsFreq);
-    }
-
-    public Color[] GetOutputSamples(Color[] samples, int[] samplesFreq) 
-    {
-        samplesFreq.CopyTo(_sortedFreqs, 0);
-        samples.CopyTo(_sortedColors, 0);
-        System.Array.Sort(_sortedFreqs, _sortedColors, 0, _sampleLength);
-        System.Array.Copy(
-            _sortedColors,
-            _sampleLength - _segmentLength,
-            _outputColors,
-            0,
-            _segmentLength
-        );
-        //Debug.Log(_outputColors[0] + " " + _outputColors[39]);
-        Debug.Log(_sortedFreqs[_sampleLength -_segmentLength] + " " + _sortedFreqs[_sampleLength - _segmentLength/2]  +  " " + _sortedFreqs[_sampleLength-1]);
-        return _outputColors;
-    }
-
-    public ColorWarden(int segmentLength, int sampleLength = 512, int maxFreqWeight = 10)
-    {
-        _segmentLength = segmentLength;
-        _sampleLength = sampleLength;
-        _maxFreqWeight = maxFreqWeight;
-
-        // To calculate index from color:
-        _span = 1 / ((float)sampleLength - 1);
-
-        _inclusions = new Color[sampleLength];
-        _inclusionsFreq = new int[sampleLength];
-
-        _exclusions = new Color[sampleLength];
-        _exclusionsFreq = new int[sampleLength];
-
-        _sortedColors = new Color[sampleLength];
-        _sortedFreqs = new float[sampleLength];
-
-        _outputColors = new Color[segmentLength];
-
-        Reset();
-    }
-}
-
 public enum SwatchPickerMode
 {
     Disabled,
     Inclusion,
     Exclusion,
     Paused,
+    // Not a huge fan of this, but works for now:
+    MaskPaused,
+    MaskDrawExclusion,
+    MaskDrawDeleteExclusion,
 }
 
 public class SwatchPicker : MonoBehaviour
@@ -186,12 +39,50 @@ public class SwatchPicker : MonoBehaviour
 
     ColorWarden _colorWarden;
 
+    private RenderTexture _screenSpaceHelperTex;
+    private RenderTexture _exclusionTex;
+
+    void RenderScreenSpaceHelper(Material renderMat)
+    {
+        var curVidTex = clipManager.clipPool.current.texture;
+        _screenSpaceHelperTex = new RenderTexture(2048, 1024, 16);
+        RenderTexture.active = _screenSpaceHelperTex;
+        GL.Clear(true, true, Color.white);
+        Graphics.Blit(null, _screenSpaceHelperTex, renderMat);
+        skyboxMat.SetTexture("_ScreenSpaceHelperTex", _screenSpaceHelperTex);
+    }
+
+    Material exclusionMat;
+
+    void InitExclusionMask()
+    {
+        if (!_exclusionTex)
+            _exclusionTex = new RenderTexture(1440, 720, 0); // no depth map dammit!
+        RenderTexture.active = _exclusionTex;
+        GL.Clear(true, true, Color.white); // won't use color, but sig needs it
+        Graphics.Blit(null, _exclusionTex, Resources.Load<Material>("DummyMaterial"));
+        exclusionMat.SetTexture("_LastTex", _exclusionTex);
+        RenderTexture.active = null;
+    }
+
+    void RenderExclusionMaskTick()
+    {
+        RenderTexture.active = _exclusionTex;
+        GL.Clear(false, false, Color.white); // won't use color, but sig needs it
+        exclusionMat.SetFloat("_DeleteMode", _mode == SwatchPickerMode.MaskDrawDeleteExclusion ? 1 : 0);
+        Graphics.Blit(null, _exclusionTex, exclusionMat);
+        exclusionMat.SetTexture("_LastTex", _exclusionTex);
+        RenderTexture.active = null;
+    }
+
     void Start()
     {
         _colorWarden = new ColorWarden(40);
 
         camera = GameObject.Find("CenterEyeAnchor").GetComponent<Camera>();
+
         colorMaskMat = Resources.Load<Material>("ColorArrayMaskBlitMaterial");
+        exclusionMat = Resources.Load<Material>("ExclusionMaskBlitMaterial");
 
         clipManager = GameObject.Find("Core").GetComponent<ClipManager>();
 
@@ -216,7 +107,12 @@ public class SwatchPicker : MonoBehaviour
 
         debugText = GameObject.Find("DebugText").GetComponent<UnityEngine.UI.Text>();
 
+        Material screenSpaceHelperMat = Resources.Load<Material>("ScreenSpaceHelperMaterial");
+
+        clipManager.clipPool.current.prepareCompleted += (_) => RenderScreenSpaceHelper(screenSpaceHelperMat);
+
         Disable(); // start off!
+        InitExclusionMask();
     }
 
 
@@ -230,7 +126,7 @@ public class SwatchPicker : MonoBehaviour
         {
             // Get mouse position
             var mouse = Input.mousePosition;
-            return new Vector3(Mathf.Clamp(mouse.x, 0, Screen.width-1), Mathf.Clamp(mouse.y, 0, Screen.height-4));
+            return new Vector3(Mathf.Clamp(mouse.x, 0, Screen.width - 1), Mathf.Clamp(mouse.y, 0, Screen.height - 4));
         }
     }
 
@@ -241,47 +137,81 @@ public class SwatchPicker : MonoBehaviour
         RenderTexture.active = null;
         swatchContainer.SetActive(false);
         // maybe release preRenderTex here
+
+        // these are only rendered once per activation,
+        // so null them out until next time:
+//        _renderedHelperCount = 0;
+        _useLightMode = _useLightMode > 0 ? 3 : 0;
     }
 
     public void Enable(SwatchPickerMode startingMode = SwatchPickerMode.Paused)
     {
         _mode = startingMode;
-        //_isIncludeMode = shouldUseInclusion;
-        line.enabled = true;
-        clipManager.sizingBar.SetActive(false);
-        clipManager.debugContainer.SetActive(false);
-        swatchContainer.SetActive(true);
-        //camera.targetTexture = preRenderTex;
-        //camera.Render();
+        if (_mode > SwatchPickerMode.Paused) // Change color for Mask mode.
+        {
+            line.startColor = new Color(0, 1, 0, 0);
+            line.endColor = new Color(0, 1, 0, 1);
 
-        //camera.targetTexture = null;
+        } else
+        {
+            line.startColor = new Color(1, 0, 1, 0);
+            line.endColor = new Color(1, 0, 1, 1);
+        }
+
+        line.enabled = true;
+
+        clipManager.sizingBar.SetActive(false);
+        //clipManager.debugContainer.SetActive(false);
+
+        swatchContainer.SetActive(true);
     }
 
     public void Toggle(SwatchPickerMode startingMode = SwatchPickerMode.Paused) // this param is deprecated!
     {
         if (_mode != startingMode)
-        {
-            Enable(startingMode);            
-        } else
+            Enable(startingMode);
+        // Only cycle from swatch mode if the startingMode param
+        // is set to the default; this allows an on-off behavior when passed
+        // specific modes:
+        else if (startingMode == SwatchPickerMode.Paused && _mode == SwatchPickerMode.Paused)
+            Enable(SwatchPickerMode.MaskPaused);
+        else
         {
             if (line.enabled) Disable();
             else Enable(startingMode);
         }
     }
 
-    bool IsDetectorActive()
+    public bool IsDetectorActive()
     {
         return line.enabled; // NOTE: Paused is considered "active".
     }
 
-    public void UseInclusionMode() =>
-        _mode = SwatchPickerMode.Inclusion;
-    public void UseExclusionMode() =>
-        _mode = SwatchPickerMode.Exclusion;
+    public void UseInclusionMode()
+    {
+        if (_mode <= SwatchPickerMode.Paused)
+            _mode = SwatchPickerMode.Inclusion;
+        else
+            _mode = SwatchPickerMode.MaskDrawDeleteExclusion;
+    }
+
+    public void UseExclusionMode()
+    {
+        if (_mode <= SwatchPickerMode.Paused)
+            _mode = SwatchPickerMode.Exclusion;
+        else
+            _mode = SwatchPickerMode.MaskDrawExclusion;
+    }
+        
 
     public void Pause()
     {
         if (!line.enabled) return;
+        if (_mode > SwatchPickerMode.Paused)
+        {
+            _mode = SwatchPickerMode.MaskPaused;
+            return;
+        }
         _mode = SwatchPickerMode.Paused;
     }
 
@@ -294,9 +224,16 @@ public class SwatchPicker : MonoBehaviour
         colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
         colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
         //if (clipManager.clipPool.current.isPaused)
-          //  clipManager.RenderColorMaskTick(clipManager.lastSource);   
+        //  clipManager.RenderColorMaskTick(clipManager.lastSource);   
     }
 
+    public void ResetCurrentMode()
+    {
+        if (_mode > SwatchPickerMode.Paused) // urgh, do something better here
+            InitExclusionMask();
+        else
+            MakeFreshSwatches();
+    }
 
     // Update is called once per frame
     void Update()
@@ -306,14 +243,20 @@ public class SwatchPicker : MonoBehaviour
 
     RenderTexture leftEye;
     RenderTexture rightEye;
+    // for ScreenSpaceHelper:
+    RenderTexture leftEyeHelper;
+    RenderTexture rightEyeHelper;
+    RenderTexture currentEyeHelper;
     RenderTexture currentEye;
 
+    //private int _renderedHelperCount = 0;
     private void OnPreRender()
     {
         if (IsDetectorActive())
         {
             _tempCam.CopyFrom(Camera.current);
 
+            // TODO: I use this pattern a lot, so I should abstract it somewhere
             RenderTextureDescriptor desc;
             if (XRSettings.enabled)
                 desc = XRSettings.eyeTextureDesc;
@@ -328,6 +271,14 @@ public class SwatchPicker : MonoBehaviour
                     leftEye.filterMode = FilterMode.Point;
                 }
                 currentEye = leftEye;
+
+                if (!leftEyeHelper)
+                {
+                    leftEyeHelper = new RenderTexture(desc);
+                    leftEyeHelper.filterMode = FilterMode.Point;
+                }
+                currentEyeHelper = leftEyeHelper;
+
             }
             else if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Right)
             {
@@ -337,22 +288,41 @@ public class SwatchPicker : MonoBehaviour
                     rightEye.filterMode = FilterMode.Point;
                 }
                 currentEye = rightEye;
+
+                if (!rightEyeHelper)
+                {
+                    rightEyeHelper = new RenderTexture(desc);
+                    rightEyeHelper.filterMode = FilterMode.Point;
+                }
+                currentEyeHelper = rightEyeHelper;
             }
             else
             {
                 if (!currentEye) currentEye = new RenderTexture(desc);
+                if (!currentEyeHelper) currentEyeHelper = new RenderTexture(desc);
             }
-
             _tempCam.targetTexture = currentEye;
 
             // TODO: Work out a more general way to do these prop pushes
             skyboxMat.SetFloat("_UseSwatchPickerMode", 1);
+            line.forceRenderingOff = true;
             /* Might want to do other stuf:
              * 1. Disable GUI
              * 2. Actually use the small texture as the source
              */
             _tempCam.Render();
             skyboxMat.SetFloat("_UseSwatchPickerMode", 0);
+
+            if (_mode > SwatchPickerMode.MaskPaused)
+            {
+                _tempCam.targetTexture = currentEyeHelper;
+                skyboxMat.SetFloat("_UseScreenSpaceHelper", 1);
+                _tempCam.Render();
+                skyboxMat.SetFloat("_UseScreenSpaceHelper", 0);
+                //_renderedHelperCount++;
+            }
+            line.forceRenderingOff = false;
+            //if (line.enabled) line.enabled = true;
         }
     }
 
@@ -366,6 +336,19 @@ public class SwatchPicker : MonoBehaviour
     int curFrame = -1;
     int frameSkip = 4;
 
+    public Color screenSpaceIndexColorLeft = new Color(0, 0, 0);
+    public Color screenSpaceIndexColorRight = new Color(0, 0, 0);
+
+    int _useLightMode  = 0; // 0 is disabled, 1 is use-and-place, 2 is use
+    public void ToggleLight() {
+        if (_useLightMode == 3) // Three is like 2, but forces it back to 0-2.
+            _useLightMode = 1;
+        else
+            _useLightMode = (_useLightMode + 1) % 3;
+        skyboxMat.SetFloat("_UseLight", _useLightMode > 0 ? 1 : 0);
+    }
+
+
     private void OnPostRender()
     {
         if (IsDetectorActive()) // false when SwatchPickerMode.Paused
@@ -375,14 +358,21 @@ public class SwatchPicker : MonoBehaviour
             var pointerPos = GetPointerScreenPos();
 
             int x = Mathf.RoundToInt(pointerPos.x);
-            int y = Mathf.RoundToInt(pointerPos.y + 2);
+            int y = Mathf.RoundToInt(pointerPos.y);
 
             //RenderTexture.active = preRenderTex;
             RenderTexture.active = currentEye;
             pixelTexture.ReadPixels(new Rect(x, y, 1, 1), 0, 0, false);
+            Color colorAtPointer = pixelTexture.GetPixel(0, 0);
+
+            RenderTexture.active = currentEyeHelper;
+            pixelTexture.ReadPixels(new Rect(x, y, 1, 1), 0, 0, false);
+            Color screenSpaceIndexColor = pixelTexture.GetPixel(0, 0);
+
+
             RenderTexture.active = null;
 
-            if (curFrame != 0) return;
+            //if (curFrame != 0) return;
 
             // Ugh... too much clipManager stuff here. Put its business and ours
             // in the same place.
@@ -396,35 +386,75 @@ public class SwatchPicker : MonoBehaviour
             if (camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left ||
                 camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Mono)
             {
-                swatchMaterialLeft.color = pixelTexture.GetPixel(0, 0);
-                if (_mode == SwatchPickerMode.Inclusion)
+                swatchMaterialLeft.color = colorAtPointer;
+                screenSpaceIndexColorLeft = screenSpaceIndexColor.linear;
+
+                if (_mode == SwatchPickerMode.Inclusion && curFrame == 0)
                 {
                     _colorWarden.Include(swatchMaterialLeft.color);
                     colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
                 }
-                else if (_mode == SwatchPickerMode.Exclusion) // just for clarity
+                else if (_mode == SwatchPickerMode.Exclusion && curFrame == 0) // just for clarity
                 {
                     _colorWarden.Exclude(swatchMaterialLeft.color);
-                    // On purpose for now:
                     colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
+                }
+
+                if (_mode > SwatchPickerMode.MaskPaused)
+                {
+                    exclusionMat.SetVector("_LaserCoord", new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g));
+                    RenderExclusionMaskTick();
+                    // Hmm, I should only have to do this once per two-eye cycle, especially
+                    // since there's no frameskip.
+                    //skyboxMat.SetTexture("_TestTex", _exclusionTex);
                 }
 
                 // Only do this once per two-eye render cycle; left eye is fine:
                 if (clipManager.clipPool.current.isPaused)
                     clipManager.RenderColorMaskTick(clipManager.lastSource);
-            } else 
+
+                // Note: this is bunk. See DrawMaskBlit for how to do it right.
+                // This is also one-eye only, though it's anybody's guess why it even
+                // works.
+                var lightPosition = new Vector2(
+                    (screenSpaceIndexColorLeft.r - 0.25f) * 60, // for SBS
+                    (screenSpaceIndexColorLeft.g - 0.50f) * 30
+                );
+
+                // Wait a minute... how the hell is this working in the second eye?
+                if (_useLightMode == 1)
+                    skyboxMat.SetVector("_LaserCoord", lightPosition);
+
+            } else
             {
-                swatchMaterialRight.color = pixelTexture.GetPixel(0, 0);
-                if (_mode == SwatchPickerMode.Inclusion)
+                swatchMaterialRight.color = colorAtPointer;
+                screenSpaceIndexColorRight = screenSpaceIndexColor.linear;
+                if (_mode == SwatchPickerMode.Inclusion && curFrame == 0)
                 {
                     _colorWarden.Include(swatchMaterialRight.color);
                     colorMaskMat.SetColorArray("_LeftColorInclusionArray", _colorWarden.Inclusions);
-                } else if (_mode == SwatchPickerMode.Exclusion) // for clarity
+                } else if (_mode == SwatchPickerMode.Exclusion && curFrame == 0) // for clarity
                 {
                     _colorWarden.Exclude(swatchMaterialRight.color);
                     colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
                 }
+            }
 
+            if (_mode > SwatchPickerMode.MaskPaused)
+            {
+                exclusionMat.SetVector("_LaserCoord", new Vector2(screenSpaceIndexColorRight.r, screenSpaceIndexColorRight.g));
+                RenderExclusionMaskTick();
+                skyboxMat.SetTexture("_TestTex", _exclusionTex);
+            }
+
+            if (camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Mono)
+            {
+                // Just render screenSpaceIndex on the right, since we can't do anything else:
+                swatchMaterialRight.color = screenSpaceIndexColor;
+                //Debug.Log("PAYDIRT: " + screenSpaceIndexColorLeft);
+
+                //Debug.Log("FUCK FUCK FUCK: " + fuck.y);
+                
             }
         }
     }

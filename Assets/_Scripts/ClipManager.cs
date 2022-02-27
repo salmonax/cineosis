@@ -24,7 +24,10 @@ public class ClipPool
     }
     public VideoPlayer current
     {
-        get => _clipPlayers[_curClipCursor];
+        get {
+//            Debug.Log("CALLED!");
+            return _clipPlayers[_curClipCursor];
+        }
     }
     public int index
     {
@@ -141,9 +144,6 @@ public class ClipProvider
 }
 
 
-
-
-
 /* This class has too many responsibilities!
  *
  * Start separating them out! For starters:
@@ -199,6 +199,7 @@ public class ClipManager : MonoBehaviour
     //private Material dynBlitMat;
     private Material dynBlurMat;
     private Material blurMat;
+
     private GameObject pointer;
     bool finishedInitialCapture = false;
 
@@ -210,12 +211,14 @@ public class ClipManager : MonoBehaviour
 
     private float _isDifferenceMaskEnabled; // overrides _UseDifferenceMask in shader
 
-    void Start()
+    private void Awake()
     {
         ClipProvider.CheckAndRequestPermissions();
-
         clipPool = new ClipPool(CoreConfig.clips);
-
+    }
+    void Start()
+    {
+        
         //if (Application.platform == RuntimePlatform.Android)
         //{
         //    clips[0].url = "/storage/emulated/0/Clips/Work Clip.mp4";
@@ -380,10 +383,10 @@ public class ClipManager : MonoBehaviour
         if (_colorMaskSkipper.Skip()) return;
         if (!colorMaskAlpha && !smallFrameTex)
         {
-            var scale = 0.2f;
-            colorMaskAlpha = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 16);
+            var scale = 0.25f;
+            colorMaskAlpha = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 0);
             colorMaskAlpha.filterMode = FilterMode.Point;
-            smallFrameTex = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 16);
+            smallFrameTex = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 0);
             smallFrameTex.filterMode = FilterMode.Point;
         }
         RenderTexture.active = smallFrameTex;
@@ -412,19 +415,30 @@ public class ClipManager : MonoBehaviour
         // @@@@ END NEW COLOR SELECTION STUFF
         //return;
     }
+
+    int[] frameSkips = new int[] { 1, 3, 5 };
+    int frameSkipCursor = 0;
+    int frameSkip
+    {
+        get {
+            var current = frameSkips[frameSkipCursor];
+            frameSkipCursor = (frameSkipCursor + 1) % frameSkips.Length;
+            return current;
+        }
+    }
     void OnNewFrame(VideoPlayer source, long frameIdx)
     {
         if (_isDifferenceMaskEnabled == 2)
             RenderColorMaskTick(source); // not differentiating eyes, and brittle when called from swatchPicker!
 
-        if (_isDifferenceMaskEnabled != 1) return;
+        //if (_isDifferenceMaskEnabled != 1) return;
         //if (finishedInitialCapture) return; // comment out to enable running frame collection
         //if (!wat)
         //{
         //RenderTexture src = source.texture as RenderTexture
         //if (lastFrameIdx == 0)
 
-        if (lastFrameIdx == 0 || frameIdx - lastFrameIdx > 1) // was 18 for initial capture
+        if (lastFrameIdx == 0 || frameIdx - lastFrameIdx > frameSkip) // was 18 for initial capture
         {
             if (lastFrameIdx == 0 || !shouldRender)
             {
@@ -457,9 +471,12 @@ public class ClipManager : MonoBehaviour
             if (lastFrameIdx == 0 || shouldRender)
             {
                 // Note: this will fill each one out as they come in.
-                skyboxMat.SetTexture("_LastTex", dsts[0]);
-                skyboxMat.SetTexture("_LastTex2", dsts[1]);
-                skyboxMat.SetTexture("_LastTex3", dsts[2]);
+                if (_isDifferenceMaskEnabled == 1)
+                {
+                    skyboxMat.SetTexture("_LastTex", dsts[0]);
+                    skyboxMat.SetTexture("_LastTex2", dsts[1]);
+                    skyboxMat.SetTexture("_LastTex3", dsts[2]);
+                }
 
                 blitMat.SetTexture("_LastTex", dsts[0]);
                 blitMat.SetTexture("_LastTex2", dsts[1]);
@@ -481,7 +498,10 @@ public class ClipManager : MonoBehaviour
                 GL.Clear(true, true, Color.black);
                 Graphics.Blit(combinedDynAlpha, dynBlurredAlpha, dynBlurMat);
 
-                skyboxMat.SetTexture("_DynAlphaTex", dynBlurredAlpha);
+                if (_isDifferenceMaskEnabled == 1)
+                    skyboxMat.SetTexture("_DynAlphaTex", dynBlurredAlpha);
+                else if (_isDifferenceMaskEnabled == 2)
+                    colorArrayBlitMat.SetTexture("_DynAlphaTex", dynBlurredAlpha);
 
                 //skyboxMat.SetTexture("_DynAlphaTex", combinedDynAlpha);
 
@@ -540,8 +560,22 @@ public class ClipManager : MonoBehaviour
         }
         clipPool.current.playbackSpeed = amount;
     }
+    public void moveAhead(int seconds)
+    {
+        clipPool.current.time += seconds;
+    }
 
-    // Update is called once per frame
+    public Vector3 OneEightify(Vector3 rot)
+    {
+        System.Func<float, float> offset =
+            (float n) => n - (n > 180 ? 360 : 0);
+        return new Vector3(
+            offset(rot.x),
+            offset(rot.y),
+            offset(rot.z)
+        );
+    }
+
     void Update()
     {
         // Sync hand exposure and saturation to skybox
@@ -552,8 +586,9 @@ public class ClipManager : MonoBehaviour
             //OVRPose head = OVRManager.tracker.GetPose();
             Vector3 head = GameObject.Find("CenterEyeAnchor").transform.position;
             Vector3 headRot = GameObject.Find("CenterEyeAnchor").transform.localEulerAngles;
+            Vector3 headRot180 = OneEightify(headRot);
 
-            float effectivePitch = headRot.x - (headRot.x > 180 ? 360 : 0) + skyboxMat.GetFloat("_RotationX"); // not right, but works here
+            float effectivePitch = headRot180.x + skyboxMat.GetFloat("_RotationX"); // not right, but works here
             var ePitchRad = effectivePitch * Mathf.PI / 180;
 
             var vRot = skyboxMat.GetFloat("_RotationX");
@@ -621,24 +656,20 @@ public class ClipManager : MonoBehaviour
             var endPos = line.GetPosition(line.positionCount - 1);
 
 
-            Vector3 lineEndScreen = camera.WorldToScreenPoint(endPos);
-
-            //var rhdx = compositingMat.GetFloat("_RightHandDeltaX");
-            //var rhdy = compositingMat.GetFloat("_RightHandDeltaY");
-
             debugText.text =
-                //rhdx " " + rhdy + " | " +
                 //System.Math.Round(hand.x, 3) + " " +
                 //System.Math.Round(hand.y, 3) + " " +
                 //System.Math.Round(hand.z, 3) + " | " +
                 //ClipProvider.GetExternalFilesDir() + " | " +
-                ClipProvider.GetFolder() + " |\n|" +
+                swatchDetector.screenSpaceIndexColorLeft + "|\n|" +
                 System.Math.Round(laser.maxLength, 2).ToString("0.00") + "|" +
                 System.Math.Round(zc, 2).ToString("0.00") + "," +
                 System.Math.Round(yc, 2).ToString("0.00") + "|" +
-                System.Math.Round(headRot.x, 2).ToString("0.00") + " | " +
+                System.Math.Round(headRot180.x, 2).ToString("0.00") + " , " +
+                System.Math.Round(headRot180.y, 2).ToString("0.00") + " , " +
+                System.Math.Round(headRot180.z, 2).ToString("0.00") + " | " +
                 System.Math.Round(effectivePitch, 2).ToString("0.00") + " |\n| " +
-                zoom * (0.135 + autoShiftPartialFactor * 0.5) + " |\n| " +
+                //zoom * (0.135 + autoShiftPartialFactor * 0.5) + " |\n| " +
                 guiLabel("_AutoShiftRotationXNudgeFactor", 2) + " |\n|" +
                 guiLabel("_ZoomShiftX", 2) + ", " +
                 guiLabel("_ZoomShiftY", 2) + " |\n| " +
@@ -672,7 +703,7 @@ public class ClipManager : MonoBehaviour
    
     void _resetFrameCapture(bool diffMaskOnly = true)
     {
-        if (!diffMaskOnly || _isDifferenceMaskEnabled == 1)
+        if (!diffMaskOnly || _isDifferenceMaskEnabled > 0)
         {
             finishedInitialCapture = false;
             //dsts = new RenderTexture[3];
@@ -681,10 +712,7 @@ public class ClipManager : MonoBehaviour
         }
     }
 
-    void EndReached(UnityEngine.Video.VideoPlayer vp)
-    {
-        _resetFrameCapture();
-    }
+    void EndReached(VideoPlayer vp) => _resetFrameCapture();
 
     // START Public Methods!
     // Because coupled to InputController!
@@ -727,8 +755,8 @@ public class ClipManager : MonoBehaviour
         exitingClip.Pause();
         clipPool.Next((VideoPlayer enteringClip, int newIndex) =>
         {
-            // Next will eventually help shuffle videoplayers across the pool.
-            // It should also prepare the player after the entering one
+            // This callback runs after entering video is prepared
+            // (small detail: it also prepares the next two videos first)
             enteringClip.targetTexture = skyboxTex;
             exitingClip.targetTexture = null;
             skyboxMat.SetInt("_VideoIndex", newIndex);
@@ -741,43 +769,6 @@ public class ClipManager : MonoBehaviour
 
             enteringClip.Play();
         });
-
-        //var nextClip = clipPool.GetNext();
-        //nextClip.targetTexture = skyboxTex; // will PROBABLY have clipPool manage this
-
-        //undoConfig = null;
-        //clipConfigs[clip.index].ApplyToMaterial(skyboxMat);
-
-
-
-
-
-        //var clip = getCurrentPlayer();
-        //curClipIndex = (curClipIndex + 1) % clipPool.clips.Length;
-        //var nextClip = getCurrentPlayer();
-
-        //clip.Pause();
-        //clip.targetTexture = null;
-
-        //// Pass it into the shader
-        //skyboxMat.SetFloat("_VideoIndex", curClipIndex);
-
-        //clip = getCurrentPlayer();
-        //clip.targetTexture = skyboxTex;
-
-        //// Responsibilities leaking here, but leaving for now:
-        //undoConfig = null;
-        //clipConfigs[curClipIndex].ApplyToMaterial(skyboxMat);
-
-        //PullAndSetMaskState();
-        //if (_isDifferenceMaskEnabled > 0)
-        //{
-        //    _resetFrameCapture();
-        //    // Note: following shoulod be taken care of by PullAndSetMaskState():
-        //    //clip.sendFrameReadyEvents = true;
-        //    //clip.frameReady += OnNewFrame;
-        //}
-        //clip.Play();
     }
 
     ClipConfig undoConfig = null;
@@ -804,32 +795,7 @@ public class ClipManager : MonoBehaviour
         ClipConfig.Save(clipConfigs); // do it manually.
         clipConfigs[clipPool.index].ApplyToMaterial(skyboxMat);
 
-        //skyboxMat.SetFloat("_RotationX", 0);
-        //skyboxMat.SetFloat("_RotationY", 0);
-
-
-        /*
-        skyboxMat.SetFloat("_HorizontalOffset", 0);
-        skyboxMat.SetFloat("_BaseZoom", 0);
-        */
-
-        //skyboxMat.SetFloat("_NudgeX", 0);
-        //skyboxMat.SetFloat("_NudgeY", 0);
-        //skyboxMat.SetFloat("_NudgeZ", 0);
-        //skyboxMat.SetFloat("_Zoom", 0);
-        //skyboxMat.SetFloat("_ZoomAdjust", 0);
-
-        /*
-        skyboxMat.SetFloat("_ZoomNudgeFactor", 2.2f);
-        skyboxMat.SetFloat("_ZoomAdjustNudgeFactor", 0.12f);
-        skyboxMat.SetFloat("_HorizontalOffsetNudgeFactor", 0.24f);
-        skyboxMat.SetFloat("_NudgeFactorX", 0.25f);
-        skyboxMat.SetFloat("_NudgeFactorY", 0.25f);
-        */
-
-        // This is hard-coded, so not sure why I put it here.
-        // Oh yeah, it's because I change it. Shit!
-        //combinedZoomFactor = -3.6f;
+        combinedZoomFactor = -3.6f;
     }
 
     public void ToggleMask()
@@ -840,65 +806,3 @@ public class ClipManager : MonoBehaviour
             EnableMask();
     }
 }
-
-
-//public class Save
-//{
-//    public bool number = true;
-//}
-
-
-/*
- * This class is in charge of blitting the RenderTextures for color matching.
- * It'll be called by both the ClipManager and SwatchPicker classes to make
- * sure that changes to the color array used for color filtering are reflected
- * in the Skybox texture.
- */
-
-//public class SwatchBlitter
-//{
-//    _frameSkip = new FrameSkipper(2);
-
-//    void ClearBlit(RenderTexture source, RenderTexture dest, float scale)
-//    {
-//        var tmp = RenderTexture.active;
-//        RenderTexture.active = dest;
-//        GL.Clear(true, true, Color.black);
-//        Graphics.Blit(source, dest, 16);
-//        RenderTexture.active = tmp;
-//    }
-//    void
-
-
-//    void Dispatch()
-//    {
-//        if (_colorMaskSkipper.Skip()) return;
-//        if (!colorMaskAlpha && !smallFrameTex)
-//        {
-//            var scale = 0.2f;
-//            colorMaskAlpha = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 16);
-//            colorMaskAlpha.filterMode = FilterMode.Point;
-//            smallFrameTex = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 16);
-//            smallFrameTex.filterMode = FilterMode.Point;
-//        }
-
-//        ClearBlit(fullFrame, smallFrame);
-//        ClearBlit(fullFrame, colorMaskAlpha, colorArrayBlitMat);
-//        ClearBlit(colorMaskAlpha, blurredColorMaskAlpha, colorMaskBlurBlit)
-
-
-//        //skyboxMat.SetTexture("_ColorMaskAlphaTex", colorMaskAlpha);
-//        skyboxMat.SetTexture("_SmallFrameTex", smallFrameTex);
-
-//        if (!blurredColorMaskAlpha)
-//        {
-//            blurredColorMaskAlpha = new RenderTexture((int)source.width / 4, (int)source.height / 4, 16);
-//        }
-
-//        RenderTexture.active = blurredColorMaskAlpha;
-//        GL.Clear(true, true, Color.black);
-//        Graphics.Blit(colorMaskAlpha, blurredColorMaskAlpha, colorMaskBlurBlit); // null because set to blitMat above
-//        skyboxMat.SetTexture("_ColorMaskAlphaTex", blurredColorMaskAlpha);
-
-
-//}

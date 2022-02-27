@@ -48,6 +48,7 @@ public class FrameSkipper
 public class RightController
 {
     private static Vector2 _axes = new Vector2(0, 0);
+    private static float _angle;
     private static Vector2 _lastAxes;
     private static float _handTrigger;
     private static float _indexTrigger;
@@ -58,6 +59,7 @@ public class RightController
     {
         _lastAxes = _axes;
         _axes = OVRInput.Get(OVRInput.Axis2D.SecondaryThumbstick);
+        _angle = Mathf.Atan(_axes.y / _axes.x) * 180 / Mathf.PI;
         _handTriggerLast = _handTrigger;
         _indexTriggerLast = _indexTrigger;
         _handTrigger = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
@@ -127,6 +129,17 @@ public class RightController
     {
         get => _axes.x != 0 && _axes.y != 0;
     }
+    // Note: the diagonal angle thresholds below are picked arbitrarily. A perfectly divided
+    // circle would yield 45/2 = 22.5, but it makes sense to give the diagonals a small amount
+    // of bias, since it tends to be easier to move the thumbstick at right angles.
+    public static bool ThumbstickMostlyDiagonalRight
+    {
+        get => !ThumbStickCentered && _angle > 0 && Mathf.Abs(Mathf.Abs(_angle) - 45) < 26;
+    }
+    public static bool ThumbstickMostlyDiagonalLeft
+    {
+        get => !ThumbStickCentered && _angle < 0 && Mathf.Abs(Mathf.Abs(_angle) - 45) < 26;
+    }
     public static bool ThumbStickMostlyX
     {
         get => !ThumbStickCentered && Mathf.Abs(_axes.x) > Mathf.Abs(_axes.y);
@@ -162,5 +175,9 @@ public class RightController
     public static Vector2 ThumbstickMagnitude
     {
         get => _axes;
+    }
+    public static float ThumbstickDiagonalMagnitude
+    {
+        get => Mathf.Sign(_axes.y) * Mathf.Sqrt(Mathf.Pow(_axes.x, 2) + Mathf.Pow(_axes.y, 2));
     }
 }

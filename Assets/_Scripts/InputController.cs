@@ -32,10 +32,13 @@ public class InputController
     {
         _ctx = ctx;
     }
-    
-    void ToggleMode(ExtraMode mode)
+
+    // exitCondition was first added for use with swatchPicker, which
+    // cycles through three modes; this way, it's possible to succinctly
+    // call toggle, but stay in the mode unless a condition is met.
+    void ToggleMode(ExtraMode mode, bool exitCondition = true)
     {
-        extraMode = extraMode == mode ? ExtraMode.None : mode;
+        extraMode = extraMode == mode && exitCondition ? ExtraMode.None : mode;
     }
 
     public void Run()
@@ -112,8 +115,24 @@ public class InputController
                             _ctx.ToggleAutoShiftMode();
                         break;
                 }
-
-                if (RightController.ThumbStickMostlyX) // this will effectively lock to the axis
+                if (RightController.ThumbstickMostlyDiagonalRight)
+                {
+                    switch (extraMode) {
+                        case ExtraMode.None:
+                            _ctx.offsetProp("_Saturation", RightController.ThumbstickDiagonalMagnitude*0.02f, 0, 1);
+                            break;
+                    }
+                }
+                else if (RightController.ThumbstickMostlyDiagonalLeft)
+                {
+                    switch (extraMode)
+                    {
+                        case ExtraMode.None:
+                            _ctx.offsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.01f, 0, 2);
+                            break;
+                    }
+                }
+                else if (RightController.ThumbStickMostlyX) // this will effectively lock to the axis
                     switch (extraMode) {
                         case ExtraMode.None:
                             _ctx.offsetProp("_Transparency", thumb.x * 0.02f, -1.5f, 1.5f);
@@ -125,11 +144,11 @@ public class InputController
                             _ctx.combinedZoomFactor = Mathf.Clamp(_ctx.combinedZoomFactor + thumb.x * 0.05f, -15.0f, 15.0f);
                             break;
                     }
-                if (RightController.ThumbstickMostlyY)
+                else if (RightController.ThumbstickMostlyY)
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.offsetProp("_Exposure", thumb.y * 0.02f, 0, 1);
+                            _ctx.offsetProp("_Exposure", thumb.y * 0.02f, 0, 2);
                             break;
                         case ExtraMode.ZoomAndHorizontalOffset:
                             _ctx.offsetProp("_BaseZoom", thumb.y * 0.01f, -3.00f, 3.00f);
@@ -155,8 +174,8 @@ public class InputController
                         if (RightController.ButtonOne) ToggleMode(ExtraMode.ZoomShiftXY);
                         break;
                     case ExtraMode.PlaybackThrottle:
-                        if (RightController.ButtonTwo) _ctx.togglePlayerThrottle(-1.5f);
-                        if (RightController.ButtonOne) _ctx.togglePlayerThrottle(1.5f);
+                        if (RightController.ButtonTwo) _ctx.moveAhead(180);
+                        if (RightController.ButtonOne) _ctx.moveAhead(60);
                         break;
                 }
                 
@@ -201,23 +220,26 @@ public class InputController
                 // TriggerMode global buttons
                 if (RightController.ButtonOne)
                 {
-                    ToggleMode(ExtraMode.SwatchPicker);
                     _ctx.swatchDetector.Toggle();
-                }
-                if (RightController.ButtonTwo) _ctx.ToggleMask(); // not an extra mode! debug only
+                    var exitCondition = !_ctx.swatchDetector.IsDetectorActive();
+                    ToggleMode(ExtraMode.SwatchPicker, exitCondition);
+                } 
 
                 // ExtraMode local buttons.
                 switch(extraMode)
                 {
                     case ExtraMode.None:
+                        if (RightController.ButtonTwo) _ctx.ToggleMask(); // not an extra mode! debug only
                         if (RightController.ThumbstickButton)
                             _ctx.outliner.enabled = !_ctx.outliner.enabled;
                         break;
                     case ExtraMode.SwatchPicker:
+                        if (RightController.ButtonTwo)
+                            _ctx.swatchDetector.ToggleLight();
                         if (RightController.ThumbstickStopX)
                             _ctx.swatchDetector.Pause();
                         if (RightController.ThumbstickButton)
-                            _ctx.swatchDetector.MakeFreshSwatches();
+                            _ctx.swatchDetector.ResetCurrentMode();
                         break;
                 }
                 
@@ -257,6 +279,10 @@ public class InputController
             _ctx.swatchDetector.Toggle(SwatchPickerMode.Exclusion);
         if (Input.GetKeyDown(KeyCode.P))
             _ctx.swatchDetector.Toggle(SwatchPickerMode.Inclusion);
+        if (Input.GetKeyDown(KeyCode.L))
+            _ctx.swatchDetector.Toggle(SwatchPickerMode.MaskDrawExclusion);
+        if (Input.GetKeyDown(KeyCode.K))
+            _ctx.swatchDetector.Toggle(SwatchPickerMode.MaskDrawDeleteExclusion);
         if (Input.GetKeyDown(KeyCode.M))
             ClipConfig.Save(_ctx.clipConfigs);
         if (Input.GetKeyDown(KeyCode.W))
@@ -265,6 +291,8 @@ public class InputController
             _ctx.playNextClip();
         if (Input.GetKeyDown(KeyCode.T))
             _ctx.ToggleMask();
+        if (Input.GetKeyDown(KeyCode.N))
+            _ctx.moveAhead(30);
         if (Input.GetKeyDown(KeyCode.UpArrow))
         {
             float foo = _ctx.skyboxMat.GetFloat("_Exposure");

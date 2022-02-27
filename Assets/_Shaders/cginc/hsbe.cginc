@@ -19,3 +19,7 @@ void hue(inout float4 color, float hue)
     //Rodrigues' rotation formula
     color.rgb = color * cosAngle + cross(k, color) * sin(angle) + k * dot(k, color) * (1 - cosAngle);
 }
+
+void contrast(inout float4 color, float _contrast) {
+    color.rgb = (color.rgb - 0.5) * (_contrast)+0.5;
+}

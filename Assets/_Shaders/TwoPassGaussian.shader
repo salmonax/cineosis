@@ -85,11 +85,13 @@ Shader "Unlit/TwoPassGaussian"
                 float blurredAlpha = 0;
 
                 for (int k=0; k < iterations; k++) {           
-                    blurredAlpha += _kernel[k]*tex2D(
+                    blurredAlpha += _kernel[k]*tex2Dlod(
                         _MainTex,
-                        float2(
+                        float4(
                             i.uv.x + (k - iterations*0.5)*tx*_BlurX, /* Z is for blur, not shifting here */
-                            i.uv.y  /* Note the Z term for shifting! */
+                            i.uv.y,  /* Note the Z term for shifting! */
+                            0,
+                            0
                         )
                     ).r;
                 }
@@ -147,11 +149,13 @@ Shader "Unlit/TwoPassGaussian"
                 float4 blurredAlpha = 0;
 
                 for (int k=0; k < iterations; k++) {           
-                    blurredAlpha += _kernel[k] * tex2D(
+                    blurredAlpha += _kernel[k] * tex2Dlod(
                         _GrabTexture,
-                        float2(
+                        float4(
                             i.uv.x,
-                            1-i.uv.y + (k - iterations*0.5)*ty*_BlurY
+                            1-i.uv.y + (k - iterations*0.5)*ty*_BlurY,
+                            0,
+                            0
                         )
                     );
                 }
