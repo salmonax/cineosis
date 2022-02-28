@@ -2,146 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Video;
-using UnityEngine.Android;
-
-/* ClipPool is manages the caching and preparing of clips
- * from a limited number of VideoPlayers.
- */
-public class ClipPool
-{
-    VideoPlayer[] _clipPlayers;
-    int _curClipCursor = 0;
-
-    public int nextIndex(int increment = 1)
-    {
-        return (_curClipCursor + increment) % _clipPlayers.Length;
-    }
-    void incrementCursor() => _curClipCursor = nextIndex();
-
-    public VideoPlayer[] clips
-    {
-        get => _clipPlayers;
-    }
-    public VideoPlayer current
-    {
-        get {
-//            Debug.Log("CALLED!");
-            return _clipPlayers[_curClipCursor];
-        }
-    }
-    public int index
-    {
-        get => _curClipCursor;
-    }
-
-    public void Next(System.Action<VideoPlayer, int> onChange)
-    {
-        incrementCursor(); 
-        if (current.isPrepared)
-        {
-            _clipPlayers[nextIndex(1)].Prepare();
-            _clipPlayers[nextIndex(2)].Prepare();
-            onChange(current, index);
-        }
-        else
-        {
-            current.prepareCompleted += (_) =>
-            {
-                _clipPlayers[nextIndex(1)].Prepare();
-                _clipPlayers[nextIndex(2)].Prepare();
-                onChange(current, index);
-            };  
-            current.Prepare();
-        }
-            
-        //current.prepareCompleted += 
-
-
-
-        // Do more business here
-    }
-
-    public ClipPool(string[] clipList)
-    {
-        _clipPlayers = new VideoPlayer[clipList.Length];
-        for (int i = 0; i < clipList.Length; i++)
-        {
-            _clipPlayers[i] = ClipProvider.GetExternal(clipList[i]);
-        }
-        _clipPlayers[0].Prepare();
-        _clipPlayers[nextIndex(1)].Prepare(); // won't fail on 1 video
-    }
-}
-
-/* ClipProvider is currently just a simple way to encapsulate local vs. externally
- * loaded clips. It also wraps a permission check.
- * 
- * WARNING: the provided paths are just for debugging.
- */
-public class ClipProvider
-{
-    private static string _androidBasePath = CoreConfig.deviceBasePath;
-    private static string _editorBasePath = CoreConfig.editorBasePath;
-    private static string _clipsPath = CoreConfig.clipsPath;
-
-    private static bool _isAndroid = Application.platform == RuntimePlatform.Android;
-
-    private static string platformClipsPath
-    {
-        get
-        {
-            if (_isAndroid) return _androidBasePath + _clipsPath;
-            return _editorBasePath + _clipsPath;
-        }
-    }
-
-    public static VideoPlayer GetLocal(string name)
-    {
-        return GameObject.Find(name).GetComponent<VideoPlayer>();
-        
-    }
-
-    public static VideoPlayer GetExternal(string name)
-    {
-        VideoPlayer loadedPlayer = new GameObject().AddComponent<VideoPlayer>();
-
-        // Applying (most) of the same defaults as the APK-loaded videos:
-        // (waitForFirstFrame is irrelevant when not playing-on-awake)
-        loadedPlayer.playOnAwake = false;
-        loadedPlayer.isLooping = true;
-        loadedPlayer.skipOnDrop = true;
-        loadedPlayer.renderMode = VideoRenderMode.RenderTexture;
-        loadedPlayer.url = platformClipsPath + name + ".mp4";
-
-        return loadedPlayer;
-    }
-
-    public static void CheckAndRequestPermissions()
-    {
-        if (!_isAndroid) return;
-        if (!Permission.HasUserAuthorizedPermission(Permission.ExternalStorageRead))
-            Permission.RequestUserPermission(Permission.ExternalStorageRead);
-    }
-
-    public static string GetFolder()
-    {
-        string path = "";
-
-        if (Application.platform == RuntimePlatform.Android)
-        {
-            try {
-                path = System.IO.Directory.GetFiles(CoreConfig.deviceBasePath + "Download")[0];
-            } catch (System.Exception e)
-            {
-                path = "FAIL: " + e.Message;
-            }
-        } else
-        {
-            path = "NO ANDROID.";
-        }
-        return path;
-    }
-}
 
 
 /* This class has too many responsibilities!
@@ -156,11 +16,9 @@ public class ClipProvider
  * Don't worry, it'll be easier than it looks.
  *
  */
-public class ClipManager : MonoBehaviour
+public partial class ClipManager : MonoBehaviour
 {
     private Camera camera;
-    private Material outlinerMat;
-    private Material compositingMat;
 
     public ClipPool clipPool;
     private RenderTexture skyboxTex;
@@ -216,23 +74,21 @@ public class ClipManager : MonoBehaviour
         ClipProvider.CheckAndRequestPermissions();
         clipPool = new ClipPool(CoreConfig.clips);
     }
+
     void Start()
     {
-        
-        //if (Application.platform == RuntimePlatform.Android)
-        //{
-        //    clips[0].url = "/storage/emulated/0/Clips/Work Clip.mp4";
-        //} else
-        //{
-        //    clips[0].url = "/Users/salmonax/Downloads/@VR/Clips/Work Clip.mp4";
-        //}
-
         _inputController = new InputController(this);
+
         blitMat = Resources.Load<Material>("StaticMaskAlphaBlitMaterial");
         blurMat = Resources.Load<Material>("NaiveGaussianMaterial");
         dynBlurMat = Resources.Load<Material>("BoxKawaseBlitMaterial"); // currently, this does Gaussian despite name
         colorArrayBlitMat = Resources.Load<Material>("ColorArrayMaskBlitMaterial");
         colorMaskBlurBlit = Resources.Load<Material>("ColorMaskGaussianMaterialTwoPass");
+
+        handMat = Resources.Load<Material>("BasicHandMaterialHSBE");
+
+        skyboxTex = Resources.Load<RenderTexture>("SkyboxTexture");
+        skyboxMat = RenderSettings.skybox;
 
         var kernel = GaussianKernel.Calculate(3, 12);
         colorMaskBlurBlit.SetFloatArray("_kernel", kernel);
@@ -244,23 +100,39 @@ public class ClipManager : MonoBehaviour
         dynBlurMat.SetFloatArray("_kernel", diffKernel);
         dynBlurMat.SetInt("_kernelWidth", diffKernel.Length);
 
-        outlinerMat = Resources.Load<Material>("OutlinerMaterial");
-        compositingMat = Resources.Load<Material>("CompositingMaterial");
-
-        handMat = Resources.Load<Material>("BasicHandMaterialHSBE");
 
         pointer = GameObject.Find("LaserPointer");
         laser = pointer.GetComponent<LaserPointer>();
 
-        skyboxTex = Resources.Load<RenderTexture>("SkyboxTexture");
-        skyboxMat = RenderSettings.skybox;
 
         // Reset _SwatchPickerMode, just in case it's changed in the material
         //skyboxMat.SetFloat("_UseSwatchPickerMode", 0);
 
+        var centerEye = GameObject.Find("CenterEyeAnchor");
+        camera = centerEye.GetComponent<Camera>();
+        swatchDetector = centerEye.GetComponent<SwatchPicker>();
+        outliner = centerEye.GetComponent<Outliner>();
 
-        // Move this into a method:
-        //PlayerPrefs.DeleteAll();
+        sizingBar = GameObject.Find("SizingBar");
+        debugContainer = GameObject.Find("DebugText");
+
+        debugText = (UnityEngine.UI.Text)debugContainer.GetComponent("Text");
+
+        skyboxMat.SetInt("_VideoIndex", 0);
+
+
+        InitClipConfigs();
+        PullAndSetMaskState();
+        DisableDebugGUI();
+
+        // Hmm, the clipPool should be doing this:
+        var clipOne = clipPool.clips[0];
+        clipOne.targetTexture = skyboxTex;
+        clipOne.Play();
+    }
+
+    void InitClipConfigs()
+    {
         // -- START ClipConfig Loading
         ClipConfig[] existingClipConfigs = ClipConfig.Load();
         clipConfigs = new ClipConfig[clipPool.clips.Length];
@@ -286,44 +158,6 @@ public class ClipManager : MonoBehaviour
         ClipConfig.Save(clipConfigs);
         clipConfigs[0].ApplyToMaterial(skyboxMat);
         // -- END ClipConfig Loading
-
-        //typeof(ClipConfig).GetField("_BaseZoom").SetValue(clipConfigs[0], 1349);
-        //Debug.Log("?!?!?" + clipConfigs[0]._BaseZoom);
-        //.SetValue(clipConfigs[curClipIndex], newValue);
-
-        var centerEye = GameObject.Find("CenterEyeAnchor");
-        camera = centerEye.GetComponent<Camera>();
-        swatchDetector = centerEye.GetComponent<SwatchPicker>();
-        outliner = centerEye.GetComponent<Outliner>();
-
-
-        // Really dumb kludge to get all videos pre-loading.
-        // Assumes only the first clip autoplays on load. Fix later
-        var clipOne = clipPool.clips[0];
-        clipOne.targetTexture = skyboxTex;
-        clipOne.Play();
-
-        sizingBar = GameObject.Find("SizingBar");
-        debugContainer = GameObject.Find("DebugText");
-        sizingBar.SetActive(false);
-        debugContainer.SetActive(false);
-
-        debugText = (UnityEngine.UI.Text)debugContainer.GetComponent("Text");
-
-        skyboxMat.SetInt("_VideoIndex", 0);
-
-        // Video frame related stuff:
-
-        //clipOne.sendFrameReadyEvents = true;
-        //clipOne.frameReady += OnNewFrame;
-        //clipOne.loopPointReached += EndReached;
-
-        PullAndSetMaskState();
-    }
-
-    public void ToggleAutoShiftMode()
-    {
-        useAutoShiftMode = !useAutoShiftMode;
     }
 
     //Save save = new Save();
@@ -362,11 +196,7 @@ public class ClipManager : MonoBehaviour
     {
         _isDifferenceMaskEnabled = skyboxMat.GetFloat("_UseDifferenceMask");
         if (_isDifferenceMaskEnabled > 0)
-        {
-            // decrement, since EnableMask kludgily increments atm:
-            //_isDifferenceMaskEnabled--;
             EnableMask(false);
-        }
         else
             DisableMask(false);
     }
@@ -428,15 +258,9 @@ public class ClipManager : MonoBehaviour
     }
     void OnNewFrame(VideoPlayer source, long frameIdx)
     {
+        if (_isDifferenceMaskEnabled == 0) return; // just in case the listener lingers; handle better
         if (_isDifferenceMaskEnabled == 2)
             RenderColorMaskTick(source); // not differentiating eyes, and brittle when called from swatchPicker!
-
-        //if (_isDifferenceMaskEnabled != 1) return;
-        //if (finishedInitialCapture) return; // comment out to enable running frame collection
-        //if (!wat)
-        //{
-        //RenderTexture src = source.texture as RenderTexture
-        //if (lastFrameIdx == 0)
 
         if (lastFrameIdx == 0 || frameIdx - lastFrameIdx > frameSkip) // was 18 for initial capture
         {
@@ -460,14 +284,9 @@ public class ClipManager : MonoBehaviour
 
                 RenderTexture.active = dsts[0];
                 GL.Clear(true, true, Color.black);
-                //Graphics.Blit(source.texture, dsts[0], new Vector2(30.0f, 30.0f), new Vector2(0, 0
                 Graphics.Blit(source.texture, dsts[0]);
-
-
-
-                //blitMat.SetTexture("_LastTex", source.texture);
-                //Graphics.Blit(source.texture, dsts[0], blitMat);
             }
+
             if (lastFrameIdx == 0 || shouldRender)
             {
                 // Note: this will fill each one out as they come in.
@@ -551,28 +370,14 @@ public class ClipManager : MonoBehaviour
         return System.Math.Round(skyboxMat.GetFloat(label), sigs).ToString("0.00");
     }
 
-    public void togglePlayerThrottle(float amount)
-    {
-        if (clipPool.current.playbackSpeed == amount)
-        {
-            clipPool.current.playbackSpeed = 1;
-            return;
-        }
-        clipPool.current.playbackSpeed = amount;
-    }
-    public void moveAhead(int seconds)
-    {
-        clipPool.current.time += seconds;
-    }
-
-    public Vector3 OneEightify(Vector3 rot)
+    private Vector3 OneEightify(Vector3 eulerAngles)
     {
         System.Func<float, float> offset =
             (float n) => n - (n > 180 ? 360 : 0);
         return new Vector3(
-            offset(rot.x),
-            offset(rot.y),
-            offset(rot.z)
+            offset(eulerAngles.x),
+            offset(eulerAngles.y),
+            offset(eulerAngles.z)
         );
     }
 
@@ -714,95 +519,5 @@ public class ClipManager : MonoBehaviour
 
     void EndReached(VideoPlayer vp) => _resetFrameCapture();
 
-    // START Public Methods!
-    // Because coupled to InputController!
-    public void offsetProp(string prop, float offset, float min, float max)
-    {
-        float currentValue = skyboxMat.GetFloat(prop);
-        float newValue = Mathf.Clamp(currentValue + offset, min, max);
-        skyboxMat.SetFloat(prop, newValue);
-        clipConfigs[clipPool.index].SetFloatIfPresent(prop, newValue);
-
-        // Use gross C# reflection to set the field dynamically from the prop
-
-        // Maybe add a method like so:
-        //  clipConfigs[curClipIndex].UpdateValidField(prop, newValue);
-
-        //var maybeField = typeof(ClipConfig).GetField(prop);
-        //if (maybeField != null)
-        //{
-        //    maybeField.SetValue(clipConfigs[curClipIndex], newValue);
-        //    clipConfigs[curClipIndex].needsUpdate = true;
-        //}
-    }
-
-    public void togglePlaying()
-    {
-        var clip = getCurrentPlayer();
-        if (clip.isPlaying)
-        {
-            clip.Pause();
-        }
-        else
-        {
-            _resetFrameCapture();
-            clip.Play();
-        }
-    }
-    public void playNextClip()
-    {
-        var exitingClip = clipPool.current;
-        exitingClip.Pause();
-        clipPool.Next((VideoPlayer enteringClip, int newIndex) =>
-        {
-            // This callback runs after entering video is prepared
-            // (small detail: it also prepares the next two videos first)
-            enteringClip.targetTexture = skyboxTex;
-            exitingClip.targetTexture = null;
-            skyboxMat.SetInt("_VideoIndex", newIndex);
-
-            undoConfig = null;
-            clipConfigs[newIndex].ApplyToMaterial(skyboxMat);
-
-            PullAndSetMaskState();
-            _resetFrameCapture(false); // don't check current mode
-
-            enteringClip.Play();
-        });
-    }
-
-    ClipConfig undoConfig = null;
-    public void resetProps()
-    {
-        // TODO: Integrate this into persistence!
-        // Something like:
-        ClipConfig freshConfig;
-        if (undoConfig == null)
-        {
-            undoConfig = clipConfigs[clipPool.index];
-            freshConfig = new ClipConfig();
-            // Argh, leave this the same:
-            freshConfig._RotationX = undoConfig._RotationX;
-            freshConfig._RotationY = undoConfig._RotationY;
-        }
-        else
-        {
-            freshConfig = undoConfig;
-            undoConfig = null;
-        }
-        // save the new config when all buttons are released::
-        clipConfigs[clipPool.index] = freshConfig;
-        ClipConfig.Save(clipConfigs); // do it manually.
-        clipConfigs[clipPool.index].ApplyToMaterial(skyboxMat);
-
-        combinedZoomFactor = -3.6f;
-    }
-
-    public void ToggleMask()
-    {
-        if (_isDifferenceMaskEnabled == 2) // cycling!
-            DisableMask();
-        else
-            EnableMask();
-    }
+    ClipConfig _undoConfig = null;
 }
