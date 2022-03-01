@@ -79,16 +79,10 @@ public class Outliner : MonoBehaviour
 
         _tempCam.cullingMask = 1 << LayerMask.NameToLayer("Outline");
 
-        RenderTextureDescriptor desc;
-        if (XRSettings.enabled)
-            desc = XRSettings.eyeTextureDesc;
-        else
-            desc = new RenderTextureDescriptor(Screen.width, Screen.height);
-
+        RenderTextureDescriptor desc = VR.desc;
         //desc.width /= 2;
         //desc.height /= 2;
-
-        if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left)
+        if (VR.Left)
         {
             if (!leftEye)
             {
@@ -105,7 +99,7 @@ public class Outliner : MonoBehaviour
             curFrame = leftFrameIdx;
 
             lastScreen = lastScreenLeft;
-        } else if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Right)
+        } else if (VR.Right)
         {
             if (!rightEye)
             {
@@ -144,14 +138,12 @@ public class Outliner : MonoBehaviour
         if (curFrame <= 0) // in case individual eye not triggered
         {
 
-            if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left)
-            {
-                lastScreen = lastScreenLeft = Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
-            }
-            else if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Right)
-            {
-                lastScreen = lastScreenRight = Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
-            }
+            if (VR.Left)
+                lastScreen = lastScreenLeft =
+                    Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
+            else if (VR.Right)
+                lastScreen = lastScreenRight =
+                    Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
                 //RenderTexture rawOutlineRt = RenderTexture.GetTemporary(desc);
 
             Graphics.Blit(rawOutlineRt, blurredOutlineRt, _outlineMaterial);

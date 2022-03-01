@@ -24,7 +24,6 @@ public class SwatchPicker : MonoBehaviour
 
     LineRenderer line;
     ClipManager clipManager;
-    RenderTexture preRenderTex; // null when not enabled
     Texture2D pixelTexture;
     Material swatchMaterialLeft; // move elsewhere
     Material swatchMaterialRight; // move elsewhere
@@ -33,9 +32,6 @@ public class SwatchPicker : MonoBehaviour
     // Start is called before the first frame update
 
     SwatchPickerMode _mode = SwatchPickerMode.Disabled;
-
-    Color[] leftInclusionColors;
-    Color[] leftExclusionColors;
 
     ColorWarden _colorWarden;
 
@@ -81,7 +77,7 @@ public class SwatchPicker : MonoBehaviour
 
         camera = GameObject.Find("CenterEyeAnchor").GetComponent<Camera>();
 
-        colorMaskMat = Resources.Load<Material>("ColorArrayMaskBlitMaterial");
+        colorMaskMat = Blitter.colorMaskBlitMat; //Resources.Load<Material>("ColorArrayMaskBlitMaterial");
         exclusionMat = Resources.Load<Material>("ExclusionMaskBlitMaterial");
 
         clipManager = GameObject.Find("Core").GetComponent<ClipManager>();
@@ -257,13 +253,8 @@ public class SwatchPicker : MonoBehaviour
             _tempCam.CopyFrom(Camera.current);
 
             // TODO: I use this pattern a lot, so I should abstract it somewhere
-            RenderTextureDescriptor desc;
-            if (XRSettings.enabled)
-                desc = XRSettings.eyeTextureDesc;
-            else
-                desc = new RenderTextureDescriptor(Screen.width, Screen.height);
-
-            if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left)
+            RenderTextureDescriptor desc = VR.desc;
+            if (VR.Left)
             {
                 if (!leftEye)
                 {
@@ -280,7 +271,7 @@ public class SwatchPicker : MonoBehaviour
                 currentEyeHelper = leftEyeHelper;
 
             }
-            else if (Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Right)
+            else if (VR.Right)
             {
                 if (!rightEye)
                 {
@@ -383,8 +374,7 @@ public class SwatchPicker : MonoBehaviour
 
 
             // Not using the right eye; if we begin to collect them both, change the following:
-            if (camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left ||
-                camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Mono)
+            if (VR.Left || VR.Mono)
             {
                 swatchMaterialLeft.color = colorAtPointer;
                 screenSpaceIndexColorLeft = screenSpaceIndexColor.linear;
@@ -406,7 +396,7 @@ public class SwatchPicker : MonoBehaviour
                     RenderExclusionMaskTick();
                     // Hmm, I should only have to do this once per two-eye cycle, especially
                     // since there's no frameskip.
-                    //skyboxMat.SetTexture("_TestTex", _exclusionTex);
+                    //skyboxMat.SetTexture("_ExclusionDrawMaskTex", _exclusionTex);
                 }
 
                 // Only do this once per two-eye render cycle; left eye is fine:
@@ -444,18 +434,12 @@ public class SwatchPicker : MonoBehaviour
             {
                 exclusionMat.SetVector("_LaserCoord", new Vector2(screenSpaceIndexColorRight.r, screenSpaceIndexColorRight.g));
                 RenderExclusionMaskTick();
-                skyboxMat.SetTexture("_TestTex", _exclusionTex);
+                skyboxMat.SetTexture("_ExclusionDrawMaskTex", _exclusionTex);
             }
 
-            if (camera.stereoActiveEye == Camera.MonoOrStereoscopicEye.Mono)
-            {
+            if (VR.Mono)
                 // Just render screenSpaceIndex on the right, since we can't do anything else:
-                swatchMaterialRight.color = screenSpaceIndexColor;
-                //Debug.Log("PAYDIRT: " + screenSpaceIndexColorLeft);
-
-                //Debug.Log("FUCK FUCK FUCK: " + fuck.y);
-                
-            }
+                swatchMaterialRight.color = screenSpaceIndexColor;                
         }
     }
 }

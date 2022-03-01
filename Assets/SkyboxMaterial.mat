@@ -154,7 +154,7 @@ Material:
     - _Transparency: 1
     - _UVSec: 0
     - _UseDiffMask: 0
-    - _UseDifferenceMask: 0
+    - _UseDifferenceMask: 2
     - _UseSwatchPickerMode: 0
     - _ZWrite: 1
     - _Zoom: 0.03

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
 
 /* 
  * This is a stop-gap file for things on their way
@@ -179,5 +180,27 @@ public class RightController
     public static float ThumbstickDiagonalMagnitude
     {
         get => Mathf.Sign(_axes.y) * Mathf.Sqrt(Mathf.Pow(_axes.x, 2) + Mathf.Pow(_axes.y, 2));
+    }
+}
+
+public static class VR
+{
+    // Syntactic sugar to produce a platform-dependent RenderTexture screen desc:
+    public static RenderTextureDescriptor desc
+    {
+        get => XRSettings.enabled ?
+            XRSettings.eyeTextureDesc :
+            new RenderTextureDescriptor(Screen.width, Screen.height);           
+    }
+    public static bool Left {
+        get => Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Left;
+    }
+    public static bool Right
+    {
+        get => Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Right;
+    }
+    public static bool Mono
+    {
+        get => Camera.current.stereoActiveEye == Camera.MonoOrStereoscopicEye.Mono;
     }
 }

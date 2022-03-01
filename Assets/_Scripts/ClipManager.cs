@@ -46,7 +46,7 @@ public partial class ClipManager : MonoBehaviour
     public RenderTexture blurredAlpha;
 
 
-    private Material blitMat; // This definitely needs a more descriptive name
+    private Material diffBlitMat; // The one that actually does the difference comparison
 
     private Material colorArrayBlitMat; // for a smaller _LastTex to generate an alpha
     public RenderTexture colorMaskAlpha;
@@ -69,6 +69,8 @@ public partial class ClipManager : MonoBehaviour
 
     private float _isDifferenceMaskEnabled; // overrides _UseDifferenceMask in shader
 
+    ClipConfig _undoConfig = null;
+
     private void Awake()
     {
         ClipProvider.CheckAndRequestPermissions();
@@ -79,7 +81,7 @@ public partial class ClipManager : MonoBehaviour
     {
         _inputController = new InputController(this);
 
-        blitMat = Resources.Load<Material>("StaticMaskAlphaBlitMaterial");
+        diffBlitMat = Resources.Load<Material>("StaticMaskAlphaBlitMaterial");
         blurMat = Resources.Load<Material>("NaiveGaussianMaterial");
         dynBlurMat = Resources.Load<Material>("BoxKawaseBlitMaterial"); // currently, this does Gaussian despite name
         colorArrayBlitMat = Resources.Load<Material>("ColorArrayMaskBlitMaterial");
@@ -119,7 +121,6 @@ public partial class ClipManager : MonoBehaviour
         debugText = (UnityEngine.UI.Text)debugContainer.GetComponent("Text");
 
         skyboxMat.SetInt("_VideoIndex", 0);
-
 
         InitClipConfigs();
         PullAndSetMaskState();
@@ -207,43 +208,13 @@ public partial class ClipManager : MonoBehaviour
     public VideoPlayer lastSource;
     public void RenderColorMaskTick(VideoPlayer source)
     {
-        if (source != lastSource) {
-          lastSource = source;
-        }
+        // Note: lastSource is a swatchPicker thing, so this needs to be refactored
+        // to not be weird
+        if (source != lastSource) lastSource = source;
         if (_colorMaskSkipper.Skip()) return;
-        if (!colorMaskAlpha && !smallFrameTex)
-        {
-            var scale = 0.25f;
-            colorMaskAlpha = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 0);
-            colorMaskAlpha.filterMode = FilterMode.Point;
-            smallFrameTex = new RenderTexture((int)(source.width * scale), (int)(source.height * scale), 0);
-            smallFrameTex.filterMode = FilterMode.Point;
-        }
-        RenderTexture.active = smallFrameTex;
-        GL.Clear(true, true, Color.black);
-        Graphics.Blit(source.texture, smallFrameTex);
 
-
-        // @@@ START COLOR SELECTION
-        RenderTexture.active = colorMaskAlpha;
-        GL.Clear(true, true, Color.black);
-        Graphics.Blit(source.texture, colorMaskAlpha, colorArrayBlitMat);
-
-        //skyboxMat.SetTexture("_ColorMaskAlphaTex", colorMaskAlpha);
-        skyboxMat.SetTexture("_SmallFrameTex", smallFrameTex);
-
-        if (!blurredColorMaskAlpha)
-        {
-            blurredColorMaskAlpha = new RenderTexture((int)source.width / 4, (int)source.height / 4, 16);
-        }
-
-        RenderTexture.active = blurredColorMaskAlpha;
-        GL.Clear(true, true, Color.black);
-        Graphics.Blit(colorMaskAlpha, blurredColorMaskAlpha, colorMaskBlurBlit); // null because set to blitMat above
-        skyboxMat.SetTexture("_ColorMaskAlphaTex", blurredColorMaskAlpha);
-
-        // @@@@ END NEW COLOR SELECTION STUFF
-        //return;
+        Blitter.ApplySmallFrame(skyboxMat, source.texture);
+        Blitter.ApplyColorMask(skyboxMat, source.texture);
     }
 
     int[] frameSkips = new int[] { 1, 3, 5 };
@@ -282,45 +253,21 @@ public partial class ClipManager : MonoBehaviour
                     dsts[0].Create();
                 }
 
-                RenderTexture.active = dsts[0];
-                GL.Clear(true, true, Color.black);
-                Graphics.Blit(source.texture, dsts[0]);
+                // Can probably do this one and dsts[0] differently:
+                Blitter.Clear((RenderTexture)source.texture, dsts[0]);
             }
 
             if (lastFrameIdx == 0 || shouldRender)
             {
                 // Note: this will fill each one out as they come in.
                 if (_isDifferenceMaskEnabled == 1)
-                {
-                    skyboxMat.SetTexture("_LastTex", dsts[0]);
-                    skyboxMat.SetTexture("_LastTex2", dsts[1]);
-                    skyboxMat.SetTexture("_LastTex3", dsts[2]);
-                }
-
-                blitMat.SetTexture("_LastTex", dsts[0]);
-                blitMat.SetTexture("_LastTex2", dsts[1]);
-                blitMat.SetTexture("_LastTex3", dsts[2]);
-
-                if (!combinedDynAlpha)
-                {
-                    combinedDynAlpha = new RenderTexture((int)source.width / 4, (int)source.height / 4, 16);
-                    dynBlurredAlpha = new RenderTexture((int)source.width / 10, (int)source.height / 10, 16);
-                }
-
-
-                RenderTexture.active = combinedDynAlpha;
-                GL.Clear(true, true, Color.black);
-                Graphics.Blit(null, combinedDynAlpha, blitMat); // null because set to blitMat above
-
-
-                RenderTexture.active = dynBlurredAlpha;
-                GL.Clear(true, true, Color.black);
-                Graphics.Blit(combinedDynAlpha, dynBlurredAlpha, dynBlurMat);
+                    Blitter.SetRunningTextures(skyboxMat, dsts);
+                Blitter.SetRunningTextures(diffBlitMat, dsts);
 
                 if (_isDifferenceMaskEnabled == 1)
-                    skyboxMat.SetTexture("_DynAlphaTex", dynBlurredAlpha);
+                    Blitter.ApplyDifferenceMask(skyboxMat, dsts);
                 else if (_isDifferenceMaskEnabled == 2)
-                    colorArrayBlitMat.SetTexture("_DynAlphaTex", dynBlurredAlpha);
+                    Blitter.ApplyDifferenceMask(Blitter.colorMaskBlitMat, dsts);
 
                 //skyboxMat.SetTexture("_DynAlphaTex", combinedDynAlpha);
 
@@ -334,9 +281,9 @@ public partial class ClipManager : MonoBehaviour
                      * The shader is currently ignoring it.
                      */
 
-                    //blitMat.SetTexture("_LastTex", dsts[0]);
-                    //blitMat.SetTexture("_LastTex2", dsts[1]);
-                    //blitMat.SetTexture("_LastTex3", dsts[2]);
+                    //diffBlitMat.SetTexture("_LastTex", dsts[0]);
+                    //diffBlitMat.SetTexture("_LastTex2", dsts[1]);
+                    //diffBlitMat.SetTexture("_LastTex3", dsts[2]);
 
                     //// Can scale from here:
                     //if (!combinedAlpha)
@@ -519,5 +466,4 @@ public partial class ClipManager : MonoBehaviour
 
     void EndReached(VideoPlayer vp) => _resetFrameCapture();
 
-    ClipConfig _undoConfig = null;
 }

@@ -38,6 +38,7 @@ Properties {
     [NoScaleOffset] _LastTex3 ("LAST Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _AlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _DynAlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
+    [NoScaleOffset] _ExclusionDrawMaskTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
     [NoScaleOffset] _TestTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
 
     [NoScaleOffset]  SmallFrameTex ("Small Frame Tex Spherical Texture (HDR)", 2D) = "grey" {}
@@ -87,6 +88,7 @@ SubShader {
         sampler2D _ColorMaskAlphaTex;
         sampler2D _SmallFrameTex;
         sampler2D _ScreenSpaceHelperTex;
+        sampler2D _ExclusionDrawMaskTex;
         sampler2D _TestTex;
         float4 _Tex_TexelSize;
         float4 _LastTex_TexelSize;
@@ -720,7 +722,9 @@ SubShader {
           if (_UseLight == 1)
             tex = float4(tex.rgb*(pow(pointLight/pow(_Exposure+0.05, 0.2), 7)+1), tex.a);
 
-          tex.a *= tex2D(_TestTex, tc).r;
+          tex.a *= tex2D(_ExclusionDrawMaskTex, tc).r;
+
+
           return tex;
           //return colorMask;
           //tex.a = pow((colorMask+dynAlpha/2)*(1-screenThresh),1.5);
