@@ -45,16 +45,28 @@ public class FrameSkipper
 }
 
 
+public enum ThumbstickMode
+{
+    Undefined,
+    MostlyDiagonalLeft,
+    MostlyDiagonalRight,
+    MostlyX,
+    MostlyY,
+    Centered
+}
+
 // Syntactic sugar for OVRInput
 public class RightController
 {
     private static Vector2 _axes = new Vector2(0, 0);
     private static float _angle;
     private static Vector2 _lastAxes;
-    private static float _handTrigger;
-    private static float _indexTrigger;
-    private static float _handTriggerLast;
-    private static float _indexTriggerLast;
+    private static float _handTrigger = 0;
+    private static float _indexTrigger = 0;
+    private static float _handTriggerLast = 0;
+    private static float _indexTriggerLast = 0;
+
+    private static ThumbstickMode _thumbstickMode = ThumbstickMode.Centered;
 
     public static void Update()
     {
@@ -65,14 +77,35 @@ public class RightController
         _indexTriggerLast = _indexTrigger;
         _handTrigger = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
         _indexTrigger = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger);
+
+        // Initiate and keep a thumbstick mode until the next time the thumbstick is
+        // centered:
+        if (ThumbstickCentered)
+            _thumbstickMode = ThumbstickMode.Centered;
+        else if (_thumbstickMode == ThumbstickMode.Centered)
+            _thumbstickMode =
+                _ThumbstickMostlyDiagonalRight ? ThumbstickMode.MostlyDiagonalRight :
+                _ThumbstickMostlyDiagonalLeft ? ThumbstickMode.MostlyDiagonalLeft :
+                _ThumbstickMostlyX ? ThumbstickMode.MostlyX :
+                _ThumbstickMostlyY ? ThumbstickMode.MostlyY :
+                ThumbstickMode.Undefined; // It should never be this.
+        
     }
     public static bool HandTrigger
     {
         get => _handTrigger > 0;
     }
+    public static bool OnlyHandTrigger
+    {
+        get => HandTrigger && !IndexTrigger;
+    }
     public static bool IndexTrigger
     {
         get => _indexTrigger > 0;
+    }
+    public static bool OnlyIndexTrigger
+    {
+        get => IndexTrigger && !HandTrigger;
     }
     public static bool BothTriggers
     {
@@ -82,9 +115,17 @@ public class RightController
     {
         get => _handTrigger > 0 && _handTriggerLast == 0;
     }
+    public static bool HandTriggerStop
+    {
+        get => _handTriggerLast > 0 && _handTrigger == 0; 
+    }
     public static bool IndexTriggerStart
     {
         get => _indexTrigger > 0 && _indexTriggerLast == 0;
+    }
+    public static bool IndexTriggerStop
+    {
+        get => _indexTriggerLast > 0 && _indexTrigger == 0;
     }
     public static bool BothTriggersStart
     {
@@ -102,6 +143,11 @@ public class RightController
         get => (_handTriggerLast == 0 && _indexTriggerLast == 0) && EitherTrigger;
     }
 
+    public static bool EitherTriggerStop
+    {
+        get => IndexTriggerStop || HandTriggerStop;
+    }
+
     public static bool EitherTrigger
     {
         get => _indexTrigger > 0 || _handTrigger > 0;
@@ -112,7 +158,7 @@ public class RightController
     }
     public static bool ButtonOne
     {
-        get => OVRInput.GetDown(OVRInput.Button.One);
+        get => !Hands && OVRInput.GetDown(OVRInput.Button.One);
     }
     public static bool ButtonTwo
     {
@@ -122,33 +168,54 @@ public class RightController
     {
         get => OVRInput.GetDown(OVRInput.Button.SecondaryThumbstick);
     }
-    public static bool ThumbStickCentered
+    public static bool ThumbstickCentered
     {
         get => _axes.x == 0 && _axes.y == 0;
     }
-    public static bool ThumbStickOblique // Hmm, maybe rename
+    public static bool ThumbstickOblique // Hmm, maybe rename
     {
         get => _axes.x != 0 && _axes.y != 0;
     }
-    // Note: the diagonal angle thresholds below are picked arbitrarily. A perfectly divided
+   
+    // The diagonal angle thresholds below are picked arbitrarily. A perfectly divided
     // circle would yield 45/2 = 22.5, but it makes sense to give the diagonals a small amount
     // of bias, since it tends to be easier to move the thumbstick at right angles.
+    private static bool _ThumbstickMostlyDiagonalRight
+    {
+        get => !ThumbstickCentered && _angle > 0 && Mathf.Abs(Mathf.Abs(_angle) - 45) < 26;
+    }
+    private static bool _ThumbstickMostlyDiagonalLeft
+    {
+        get => !ThumbstickCentered && _angle < 0 && Mathf.Abs(Mathf.Abs(_angle) - 45) < 26;
+    }
+    private static bool _ThumbstickMostlyX
+    {
+        get => !ThumbstickCentered && Mathf.Abs(_axes.x) > Mathf.Abs(_axes.y);
+    }
+    private static bool _ThumbstickMostlyY
+    {
+        get => !ThumbstickCentered && Mathf.Abs(_axes.x) <= Mathf.Abs(_axes.y);
+    }
+
+    // The Update() loop makes thumbstick directions "sticky", such that the public
+    // versions of these getters should only check against the assigned enum:
     public static bool ThumbstickMostlyDiagonalRight
     {
-        get => !ThumbStickCentered && _angle > 0 && Mathf.Abs(Mathf.Abs(_angle) - 45) < 26;
+        get => _thumbstickMode == ThumbstickMode.MostlyDiagonalRight;
     }
     public static bool ThumbstickMostlyDiagonalLeft
     {
-        get => !ThumbStickCentered && _angle < 0 && Mathf.Abs(Mathf.Abs(_angle) - 45) < 26;
+        get => _thumbstickMode == ThumbstickMode.MostlyDiagonalLeft;
     }
-    public static bool ThumbStickMostlyX
+    public static bool ThumbstickMostlyX
     {
-        get => !ThumbStickCentered && Mathf.Abs(_axes.x) > Mathf.Abs(_axes.y);
+        get => _thumbstickMode == ThumbstickMode.MostlyX;
     }
     public static bool ThumbstickMostlyY
     {
-        get => !ThumbStickCentered && Mathf.Abs(_axes.x) <= Mathf.Abs(_axes.y);
+        get => _thumbstickMode == ThumbstickMode.MostlyY;
     }
+
     public static bool ThumbstickStartX
     {
         get => _axes.x != 0 && _lastAxes.x == 0;
@@ -180,6 +247,19 @@ public class RightController
     public static float ThumbstickDiagonalMagnitude
     {
         get => Mathf.Sign(_axes.y) * Mathf.Sqrt(Mathf.Pow(_axes.x, 2) + Mathf.Pow(_axes.y, 2));
+    }
+
+    public static bool Hands
+    {
+        get => OVRInput.IsControllerConnected(OVRInput.Controller.Hands);
+    }
+    public static bool Pinch
+    {
+        get => Hands && OVRInput.Get(OVRInput.Button.One);
+    }
+    public static bool PinchStart
+    {
+        get => Hands && OVRInput.GetDown(OVRInput.Button.One);
     }
 }
 

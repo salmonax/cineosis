@@ -28,10 +28,14 @@ Shader "Custom/ShadowCompositing"
             float2 _MainTex_TexelSize;
             sampler2D _MaskTex; // original mask
             sampler2D _SceneTex;
+            sampler2D _GrainTex;
 
             float _RightHandDeltaX;
             float _RightHandDeltaY;
             float _RightHandZ;
+
+            float _HandOffsetX = 0;
+            float _HandOffsetY = 0;
 
             #pragma vertex vert
             #pragma fragment frag
@@ -59,31 +63,46 @@ Shader "Custom/ShadowCompositing"
             {
                 float tx = _MainTex_TexelSize.x;
                 float ty = _MainTex_TexelSize.y;
-                float4 blurTex = tex2D(_MainTex, float2(i.uvs.x - _RightHandDeltaX*tx, i.uvs.y - _RightHandDeltaY*ty));
-                float4 maskTex = tex2D(_MaskTex, i.uvs.xy);
+                float4 blurTex = tex2D(_MainTex, float2(i.uvs.x - _RightHandDeltaX*tx - _HandOffsetX*tx, i.uvs.y - _RightHandDeltaY*ty - _HandOffsetY*ty));
+                float4 maskTex = tex2D(_MaskTex, float2(i.uvs.x - _HandOffsetX*tx, i.uvs.y - _HandOffsetY*ty));
                 //float4 maskTex = tex2D(_MaskTex, float2(i.uvs.x - _RightHandDeltaX*tx, i.uvs.y - _RightHandDeltaY*ty));
                 float4 sceneTex = tex2D(_SceneTex, i.uvs.xy);
 
-
+                //return 1-maskTex*2;
                 /* 0.5 would allow for some leeway if I decide to Blit this at a smaller size: */
                 if (maskTex.r > 0) {
-                    return sceneTex;
+                    // For passthrough cutout:
+                    //sceneTex.a = max((1-maskTex.r*1.75)*sceneTex.a, 0);
+                    //sceneTex.rgb *= max((1-maskTex.r*1.75), 0.5);
+
+                    // For outlined shadow-hand (ugly)
+                    if (maskTex.r > 0.25 && maskTex.r < 0.5)
+                        //sceneTex.rgb = float3(1, 0, 0.5);
+                        sceneTex.rgb = float3(0.42, 0.06, 0.92);
+                    else 
+                        sceneTex.rgb *= max((1-maskTex.r*1.75), 0.5);
+
+
+
+                    // For just the model:
+                    //return sceneTex;
                 }
 
                 /* Ignore if very dark, which includes the masked parts of the scene: */
                 if (sceneTex.r < 0.01)
                     blurTex.r = 0;
 
+                //return sceneTex;
+
                 float redRatio = ((sceneTex.g + sceneTex.b)/2)/sceneTex.r; /* make scene-relative redness */
-                half4 color = sceneTex - blurTex.r * half4(sceneTex.r*max(0.7,0.8*min(1,redRatio)),sceneTex.g*0.8,sceneTex.b*0.8,0)*_RightHandZ/0.4;
+                half4 color = sceneTex;// - blurTex.r * half4(sceneTex.r*max(0.7,0.8*min(1,redRatio)),sceneTex.g*0.8,sceneTex.b*0.8,0)*_RightHandZ/0.4;
                 // For visual testing:
                 //half4 color = sceneTex + intensityRadius * half4(1,1,1,1);
 
                 // fix? maybe unnecessary
                 //color.r = max(tex2D(_SceneTex, i.uvs.xy).r-intensityRadius, 0);
 
-                return color;
-                
+                return float4(color.rgb - tex2D(_GrainTex, i.uvs)*pow(color.rgb*7,0.7), color.a);
             }
             ENDCG
 

@@ -7,6 +7,7 @@ Shader "Unlit/ColorArrayMaskBlit"
         _TestX("Matte Threshold X", Range(0, 1)) = 0.01
         _TestY("Matte Threshold Y", Range(0, 1)) = 1
          TestZ("Matte Threshold Z", Range(0.2, 8)) = 0.3
+         [Enum(None, 0, Side by Side, 1, Over Under, 2)] _Layout("3D Layout", Float) = 0
 //         TestU("Matte Threshold U", Range(0, 0.2)) = 0.01
   //      _TestV("Matte Threshold V", Range(0, 1)) = 1
     //     TestW("Matte Threshold W", Range(0.2, 8)) = 0.3
@@ -26,6 +27,7 @@ Shader "Unlit/ColorArrayMaskBlit"
             #include "UnityCG.cginc"
             #include "./cginc/rgb2lab.cginc"
             #include "./cginc/blur.cginc"
+            #include "./cginc/masking.cginc"
 
             struct appdata
             {
@@ -49,6 +51,7 @@ Shader "Unlit/ColorArrayMaskBlit"
             float _TestX;
             float _TestY;
             float _TestZ;
+            float _Layout;
             //float _TestU;
            // float _TestV;
             //float _TestW;
@@ -93,18 +96,7 @@ Shader "Unlit/ColorArrayMaskBlit"
                 //return float4(rgb2lrgb(_LeftColorExclusionArray[0].rgb), 1);
                 ////return tex;
 
-                float eyeFactor = 0;
-                if (i.uv.x > 0.5)
-                    eyeFactor = 0.5;
-
-                //float stX = pow(tc.x - (0.25 + eyeFactor), 2)*25; // was 25.    
-                //float stY = pow(tc.y, 1.5); // was 1.5, no shift term
-
-                float stX = pow(i.uv.x - (0.25 + eyeFactor), 2)*40; // was 25.    
-                float stY = pow(i.uv.y, 0.6) - 0.35; // was 1.5, no shift term
- 
-                float screenThresh = (stX + stY)/2;
-
+                float screenThresh = getScreenThresh(_Layout, i.uv);
 
                 float4 output = float4(0,0,0,1);
                 float3 texHSV = RGBtoHSV(tex);
@@ -125,6 +117,12 @@ Shader "Unlit/ColorArrayMaskBlit"
                         float miracleCure = sqrt(includeSwatchDist)*min((includeColor.z+texHSV.z*4)/5/0.2, 1);
                         //float includeSwatchDist = cie76(rgb2lab(includeColor), texLab);
                         //min(pow((includeColor.z+texHSV.z)/2/0.2, 8), 1)
+                        float3 srgb = LinearToSRGB(tex.rgb);
+                        //float screenThreshHack = 1;
+                        if (srgb.r > 0.373 && srgb.g > 0.157 && srgb.b > 0.0784)
+                           if (abs(srgb.r - srgb.g) > 0.0588 && srgb.r > srgb.g && srgb.r > srgb.b)
+                                screenThresh = 0;
+
 
                         if (miracleCure < _TestX*pow(1-screenThresh, 8) ||
                             miracleCure < dynAlpha.r/10 // was 20 for a second

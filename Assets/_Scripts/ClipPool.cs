@@ -1,4 +1,5 @@
 using UnityEngine.Video;
+using UnityEngine;
 
 /* ClipPool is manages the caching and preparing of clips
  * from a limited number of VideoPlayers.
@@ -6,6 +7,7 @@ using UnityEngine.Video;
 public class ClipPool
 {
     VideoPlayer[] _clipPlayers;
+    Texture2D[] _matteTextures;
     int _curClipCursor = 0;
 
     public int nextIndex(int increment = 1)
@@ -20,11 +22,11 @@ public class ClipPool
     }
     public VideoPlayer current
     {
-        get
-        {
-            //            Debug.Log("CALLED!");
-            return _clipPlayers[_curClipCursor];
-        }
+        get =>_clipPlayers[_curClipCursor];
+    }
+    public Texture2D currentMatte
+    {
+        get => _matteTextures[_curClipCursor];
     }
     public int index
     {
@@ -61,9 +63,11 @@ public class ClipPool
     public ClipPool(string[] clipList)
     {
         _clipPlayers = new VideoPlayer[clipList.Length];
+        _matteTextures = new Texture2D[clipList.Length];
         for (int i = 0; i < clipList.Length; i++)
         {
             _clipPlayers[i] = ClipProvider.GetExternal(clipList[i]);
+            _matteTextures[i] = ClipProvider.GetExternalMatte(clipList[i]);
         }
         _clipPlayers[0].Prepare();
         _clipPlayers[nextIndex(1)].Prepare(); // won't fail on 1 video

@@ -5,6 +5,7 @@ Shader "Unlit/StaticMaskAlphaBlit"
         _LastTex ("Texture", 2D) = "white" {}
         _LastTex2 ("Texture", 2D) = "white" {}
         _LastTex3 ("Texture", 2D) = "white" {}
+        [Enum(None, 0, Side by Side, 1, Over Under, 2)] _Layout("3D Layout", Float) = 0
     }
     SubShader
     {
@@ -22,6 +23,7 @@ Shader "Unlit/StaticMaskAlphaBlit"
             #include "UnityCG.cginc"
             #include "./cginc/rgb2lab.cginc"
             #include "./cginc/blur.cginc"
+            #include "./cginc/masking.cginc"
 
             struct appdata
             {
@@ -45,6 +47,7 @@ Shader "Unlit/StaticMaskAlphaBlit"
             sampler2D _LastTex3;
             float4 _LastTex3_ST;
             float4 _LastTex3_TexelSize;
+            float _Layout;
 
             v2f vert (appdata v)
             {
@@ -69,18 +72,7 @@ Shader "Unlit/StaticMaskAlphaBlit"
                 float3 lastLab2 = rgb2lab(last2);
                 float3 lastLab3 = rgb2lab(last3);
 
-                float eyeFactor = 0;
-                if (i.uv.x > 0.5)
-                    eyeFactor = 0.5;
-
-                //float stX = pow(tc.x - (0.25 + eyeFactor), 2)*25; // was 25.    
-                //float stY = pow(tc.y, 1.5); // was 1.5, no shift term
-
-                float stX = pow(i.uv.x - (0.25 + eyeFactor), 2)*40; // was 25.    
-                float stY = pow(i.uv.y, 0.6) - 0.35; // was 1.5, no shift term
- 
-                float screenThresh = (stX + stY)/2;
-
+                float screenThresh = getScreenThresh(_Layout, i.uv);
 
                 float d4 = cie94(lastLab, lastLab2);
                 float d5 = cie94(lastLab2, lastLab3);

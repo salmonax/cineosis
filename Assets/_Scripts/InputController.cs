@@ -52,7 +52,7 @@ public class InputController
             _ctx.DisableDebugGUI(true); // forceSwatchPickerOff == true
 
             // When nothing is pressed, trigger persistence:
-            if (RightController.ThumbStickCentered)
+            if (RightController.ThumbstickCentered)
                 _ctx.UpdateDirtyConfig();
         }
 
@@ -66,6 +66,15 @@ public class InputController
 
         if (RightController.EitherTriggerStart)
             _ctx.EnableDebugGUI();
+
+        if (RightController.IndexTriggerStart)// || RightController.PinchStart)
+            _ctx.InitHeadSync();
+        if (RightController.OnlyIndexTrigger)// || RightController.Pinch)
+        {
+            if (RightController.HandTriggerStop)
+                _ctx.InitHeadSync(); // prevents stale headSync offsets
+            _ctx.UpdateHeadSync();
+        }
 
         // Next, deal with buttons and thumbstick, with or without triggers:
         var thumb = RightController.ThumbstickMagnitude;
@@ -82,8 +91,14 @@ public class InputController
                 // If applicable, deal with extraMode specific buttons here.
 
                 // Then, thumbstick
-                if (RightController.ThumbstickAnyX) _ctx.OffsetProp("_RotationY", -thumb.x, -180, 180);
-                if (RightController.ThumbstickAnyY) _ctx.OffsetProp("_RotationX", thumb.y, -180, 180);
+                if (RightController.ThumbstickAnyX)
+                    //_ctx.OffsetProp("_RotationY", -thumb.x, -180, 180);
+                    if (RightController.ThumbstickMostlyX)
+                        _ctx.OffsetProp("_TestX", thumb.x*0.1f, 0.5f, 30);
+                if (RightController.ThumbstickAnyY)
+                    //_ctx.OffsetProp("_RotationX", thumb.y, -180, 180);
+                    if (RightController.ThumbstickMostlyY)
+                        _ctx.OffsetProp("_TestY", thumb.y*0.1f, 0.5f, 30);
                 break;
 
             case TriggerMode.TransparencyAndExposure: // BOTH TRIGGERS
@@ -102,9 +117,11 @@ public class InputController
                             _ctx.ToggleAutoShiftMode();
                         break;
                 }
+
                 if (RightController.ThumbstickMostlyDiagonalRight)
                 {
-                    switch (extraMode) {
+                    switch (extraMode)
+                    {
                         case ExtraMode.None:
                             _ctx.OffsetProp("_Saturation", RightController.ThumbstickDiagonalMagnitude*0.02f, 0, 1);
                             break;
@@ -115,11 +132,11 @@ public class InputController
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.OffsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.01f, 0, 2);
+                            _ctx.OffsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.001f, 0, 2);
                             break;
                     }
                 }
-                else if (RightController.ThumbStickMostlyX) // this will effectively lock to the axis
+                else if (RightController.ThumbstickMostlyX) // this will effectively lock to the axis
                     switch (extraMode) {
                         case ExtraMode.None:
                             _ctx.OffsetProp("_Transparency", thumb.x * 0.02f, -1.5f, 1.5f);
@@ -143,8 +160,8 @@ public class InputController
                         case ExtraMode.ResizeFactorAndResize:
                             // Argh, this should ESPECIALLY be defined somewhere:
                             float step = 0.005f;
-                            _ctx.OffsetProp("_BaseZoom", thumb.y * step, -1.5f, 1.5f);
-                            _ctx.OffsetProp("_HorizontalOffset", thumb.y * step / _ctx.combinedZoomFactor, -1.5f / Mathf.Abs(_ctx.combinedZoomFactor), 1.5f / Mathf.Abs(_ctx.combinedZoomFactor));
+                            _ctx.OffsetProp("_BaseZoom", thumb.y * step, -3.00f, 3.00f);
+                            _ctx.OffsetProp("_HorizontalOffset", thumb.y * step / _ctx.combinedZoomFactor, -3.00f / Mathf.Abs(_ctx.combinedZoomFactor), 3.00f / Mathf.Abs(_ctx.combinedZoomFactor));
                             break;
                     }
                 break;
@@ -166,11 +183,12 @@ public class InputController
                         break;
                 }
                 
-                if (RightController.ThumbStickMostlyX) // Disallow diagonals
+                if (RightController.ThumbstickMostlyX) // Disallow diagonals
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.OffsetProp("_ZoomNudgeFactor", thumb.x * 0.1f, 0, 6); // Zoom? I think this is horizontal offset.. Not used anymore?!
+                            //_ctx.OffsetProp("_ZoomNudgeFactor", thumb.x * 0.1f, 0, 6); // Zoom? I think this is horizontal offset.. Not used anymore?!
+                            _ctx.OffsetProp("_BlurX", thumb.x * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.OffsetProp("_NudgeFactorX", thumb.x * 0.01f, 0, 1);
@@ -185,7 +203,8 @@ public class InputController
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.OffsetProp("_ZoomAdjustNudgeFactor", -thumb.y * 0.05f, 0, 1); // squashes down, so reversed
+                            //_ctx.OffsetProp("_ZoomAdjustNudgeFactor", -thumb.y * 0.05f, 0, 1); // squashes down, so reversed
+                            _ctx.OffsetProp("_BlurY", thumb.y * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.OffsetProp("_NudgeFactorY", thumb.y * 0.01f, 0, 1);
@@ -218,7 +237,11 @@ public class InputController
                     case ExtraMode.None:
                         if (RightController.ButtonTwo) _ctx.CycleMaskModes(); // not an extra mode! debug only
                         if (RightController.ThumbstickButton)
+                        {
+                            //_ctx.outliner.handOffsetY = 0;
+                            //_ctx.outliner.handOffsetX = 0;
                             _ctx.outliner.enabled = !_ctx.outliner.enabled;
+                        }
                         break;
                     case ExtraMode.SwatchPicker:
                         if (RightController.ButtonTwo)
@@ -231,12 +254,13 @@ public class InputController
                 }
                 
                 // ExtraMode-relative thumbstick behavior
-                if (RightController.ThumbStickMostlyX)
+                if (RightController.ThumbstickMostlyX)
                     switch (extraMode)
                     {
                         case ExtraMode.None:
                             //_ctx.OffsetProp("_AutoShiftRotationXNudgeFactor", -thumb.x * 0.5f, -360, 360);
                             _ctx.OffsetProp("_HorizontalOffsetNudgeFactor", thumb.x * 0.05f, 0, 1); // Horizontal Offset Factor
+                            //_ctx.outliner.handOffsetX += thumb.x;
                             break;
                         case ExtraMode.SwatchPicker:
                             if (RightController.ThumbstickStartX)
@@ -250,7 +274,8 @@ public class InputController
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.OffsetProp("_Saturation", thumb.y * 0.02f, 0, 1);    
+                            _ctx.OffsetProp("_Saturation", thumb.y * 0.02f, 0, 1);
+                            //_ctx.outliner.handOffsetY += thumb.y;
                             break;
                         case ExtraMode.SwatchPicker:
                             _ctx.laser.maxLength += thumb.y * 0.02f;
@@ -280,5 +305,10 @@ public class InputController
             _ctx.CycleMaskModes();
         if (Input.GetKeyDown(KeyCode.N))
             _ctx.SeekAhead(30);
+        if (Input.GetKeyDown(KeyCode.B))
+        {
+            _ctx.swatchDetector.Toggle(SwatchPickerMode.MaskDrawDeleteExclusion);
+            _ctx.swatchDetector.UseAndPlaceLight();
+        }
     }
 }

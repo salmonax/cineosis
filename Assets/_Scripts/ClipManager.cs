@@ -68,44 +68,39 @@ public partial class ClipManager : MonoBehaviour
     public bool useAutoShiftMode = false;
 
     private float _isDifferenceMaskEnabled; // overrides _UseDifferenceMask in shader
+    private int _differenceMaskCount = 3; // used to mod across modes
 
     ClipConfig _undoConfig = null;
 
+    GameObject _rightHand;
+
+    public static Vector2 hpLeft = new Vector2(0, 0);
+    public static Vector2 hpRight = new Vector2(0, 0);
+
     private void Awake()
     {
+        Blitter.Init(); // currently just applies Gaussian kernels
         ClipProvider.CheckAndRequestPermissions();
         clipPool = new ClipPool(CoreConfig.clips);
     }
-
     void Start()
     {
-        _inputController = new InputController(this);
 
-        diffBlitMat = Resources.Load<Material>("StaticMaskAlphaBlitMaterial");
-        blurMat = Resources.Load<Material>("NaiveGaussianMaterial");
-        dynBlurMat = Resources.Load<Material>("BoxKawaseBlitMaterial"); // currently, this does Gaussian despite name
-        colorArrayBlitMat = Resources.Load<Material>("ColorArrayMaskBlitMaterial");
-        colorMaskBlurBlit = Resources.Load<Material>("ColorMaskGaussianMaterialTwoPass");
+        _head = GameObject.Find("CenterEyeAnchor");
+        _rightHand = GameObject.Find("RightHandAnchor");
+
+        _inputController = new InputController(this);
 
         handMat = Resources.Load<Material>("BasicHandMaterialHSBE");
 
         skyboxTex = Resources.Load<RenderTexture>("SkyboxTexture");
         skyboxMat = RenderSettings.skybox;
 
-        var kernel = GaussianKernel.Calculate(3, 12);
-        colorMaskBlurBlit.SetFloatArray("_kernel", kernel);
-        colorMaskBlurBlit.SetInt("_kernelWidth", kernel.Length);
-
-        var diffKernel = GaussianKernel.Calculate(2, 6);
-        //blurMat.SetFloatArray("_kernel", diffKernel);
-        //blurMat.SetInt("_kernelWidth", diffKernel.Length);
-        dynBlurMat.SetFloatArray("_kernel", diffKernel);
-        dynBlurMat.SetInt("_kernelWidth", diffKernel.Length);
-
+        if (OVRManager.isHmdPresent)
+            OVRManager.display.RecenteredPose += ResetHeadSync;
 
         pointer = GameObject.Find("LaserPointer");
         laser = pointer.GetComponent<LaserPointer>();
-
 
         // Reset _SwatchPickerMode, just in case it's changed in the material
         //skyboxMat.SetFloat("_UseSwatchPickerMode", 0);
@@ -123,13 +118,29 @@ public partial class ClipManager : MonoBehaviour
         skyboxMat.SetInt("_VideoIndex", 0);
 
         InitClipConfigs();
+        Blitter.SetCurrentMatte(clipPool.currentMatte);
         PullAndSetMaskState();
         DisableDebugGUI();
 
-        // Hmm, the clipPool should be doing this:
-        var clipOne = clipPool.clips[0];
+        // Hmm, the clipPool should be doing this (it's basically just PlayNextClip):
+        var clipOne = clipPool.current;
+        clipOne.prepareCompleted += SetLayoutFromResolution;
         clipOne.targetTexture = skyboxTex;
         clipOne.Play();
+    }
+
+    void SetLayoutFromResolution(VideoPlayer preparedPlayer)
+    {
+        var ratio = preparedPlayer.width / preparedPlayer.height;
+        preparedPlayer.aspectRatio = VideoAspectRatio.Stretch;
+        // If it's square, assume top-bottom (ie. 2); otherwise, SBS.
+        var layout = (ratio == 1) ? 2 : 1;
+        skyboxMat.SetInt("_Layout", layout);
+        // Oof... not a fan, but doing it for now; these all use
+        // an "eyeFactor" term:
+        Blitter.diffMaskBlitMat.SetInt("_Layout", layout);
+        Blitter.colorMaskBlitMat.SetInt("_Layout", layout);
+        Blitter.lightingMat.SetInt("_Layout", layout);
     }
 
     void InitClipConfigs()
@@ -169,7 +180,7 @@ public partial class ClipManager : MonoBehaviour
     {
         if (pushSetting)
         {
-            _isDifferenceMaskEnabled = (_isDifferenceMaskEnabled + 1) % 3;
+            _isDifferenceMaskEnabled = (_isDifferenceMaskEnabled + 1) % (_differenceMaskCount + 1);
             skyboxMat.SetFloat("_UseDifferenceMask", _isDifferenceMaskEnabled);
             clipConfigs[clipPool.index].SetFloatIfPresent("_UseDifferenceMask", _isDifferenceMaskEnabled);
         }
@@ -217,7 +228,7 @@ public partial class ClipManager : MonoBehaviour
         Blitter.ApplyColorMask(skyboxMat, source.texture);
     }
 
-    int[] frameSkips = new int[] { 1, 3, 5 };
+    int[] frameSkips = new int[] { 1, 3, 5, 3 };
     int frameSkipCursor = 0;
     int frameSkip
     {
@@ -230,6 +241,14 @@ public partial class ClipManager : MonoBehaviour
     void OnNewFrame(VideoPlayer source, long frameIdx)
     {
         if (_isDifferenceMaskEnabled == 0) return; // just in case the listener lingers; handle better
+        if (_isDifferenceMaskEnabled == 3)
+        {
+            if (clipPool.currentMatte)
+                Blitter.ApplyMatteAlpha(skyboxMat, source.texture, clipPool.currentMatte, frameIdx % 2 == 0);
+            else
+                CycleMaskModes(); // Just get out of the mode! Real easy like.
+            return;
+        }
         if (_isDifferenceMaskEnabled == 2)
             RenderColorMaskTick(source); // not differentiating eyes, and brittle when called from swatchPicker!
 
@@ -262,7 +281,9 @@ public partial class ClipManager : MonoBehaviour
                 // Note: this will fill each one out as they come in.
                 if (_isDifferenceMaskEnabled == 1)
                     Blitter.SetRunningTextures(skyboxMat, dsts);
-                Blitter.SetRunningTextures(diffBlitMat, dsts);
+
+                // Update the difference mask textures regardless of mode
+                Blitter.SetRunningTextures(Blitter.diffMaskBlitMat, dsts);
 
                 if (_isDifferenceMaskEnabled == 1)
                     Blitter.ApplyDifferenceMask(skyboxMat, dsts);
@@ -312,20 +333,71 @@ public partial class ClipManager : MonoBehaviour
     }
 
     // Start is called before the first frame update
-    string guiLabel(string label, int sigs)
+    string guiLabel(string label, int sigs, Material targetMat = null)
     {
-        return System.Math.Round(skyboxMat.GetFloat(label), sigs).ToString("0.00");
+        if (!targetMat) targetMat = skyboxMat;
+        return System.Math.Round(targetMat.GetFloat(label), sigs).ToString("0.00");
     }
 
     private Vector3 OneEightify(Vector3 eulerAngles)
     {
         System.Func<float, float> offset =
-            (float n) => n - (n > 180 ? 360 : 0);
+            (float n) => (n % 360) - ((n % 360) > 180 ? 360 : 0);
         return new Vector3(
             offset(eulerAngles.x),
             offset(eulerAngles.y),
             offset(eulerAngles.z)
         );
+    }
+
+    private Vector3 _headPositionBasis = new Vector3(0, 0, 0);
+    private Vector3 _headPositionAtStart;
+
+    private Vector3 _handRotationAtStart; // not a "basis" in the same sense as head
+    //private Vector3 _handSyncRotationDelta = new Vector3(0, 0, 0);
+
+    private Vector3 _skyboxRotationAtStart;
+    private Vector3 _smoothHandSyncRotation;
+
+    private float _baseZoomAtStart;
+    //private Vector3 _headAtHandHeight;
+    private float _handDistanceAtStart;
+
+    private GameObject _head;
+
+    // Warning: nothing is enforcing that UpdateHeadSync() only be called after InitHeadSync()
+    public void InitHeadSync()
+    {
+        _headPositionAtStart = _head.transform.position - _headPositionBasis;
+
+        _handRotationAtStart = OneEightify(_rightHand.transform.localEulerAngles);
+        _skyboxRotationAtStart = _smoothHandSyncRotation = new Vector3(
+            skyboxMat.GetFloat("_RotationX"), // Relative to X-axis, so vertical shift
+            skyboxMat.GetFloat("_RotationY"), // Relative to Y-axis, so horizontal shift
+            0 // ignored, just to simplify operators in UpdateHeadSync()
+         );
+
+        _baseZoomAtStart = skyboxMat.GetFloat("_BaseZoom");
+        //_headAtHandHeight = new Vector3(_head.transform.position.x, _rightHand.transform.position.y, _head.transform.position.z);
+
+        _handDistanceAtStart = Vector3.Distance(_head.transform.position, _rightHand.transform.position);
+    }
+    public void UpdateHeadSync()
+    {
+        _headPositionBasis = _head.transform.position - _headPositionAtStart;
+
+        var handSyncRotationDelta = (OneEightify(_rightHand.transform.localEulerAngles) - _handRotationAtStart);
+        _smoothHandSyncRotation = (_smoothHandSyncRotation + _skyboxRotationAtStart - handSyncRotationDelta) / 2;
+        skyboxMat.SetFloat("_RotationX", _smoothHandSyncRotation.x);
+        skyboxMat.SetFloat("_RotationY", _smoothHandSyncRotation.y);
+
+        var handDistanceDelta = _handDistanceAtStart - Vector3.Distance(_head.transform.position, _rightHand.transform.position);
+        skyboxMat.SetFloat("_BaseZoom", _baseZoomAtStart - 4.5788f * handDistanceDelta); // dead-reckoned magic number
+    }
+    // Run this on recenter:
+    private void ResetHeadSync()
+    {
+        _headPositionBasis = new Vector3(0, 0, 0);
     }
 
     void Update()
@@ -336,8 +408,10 @@ public partial class ClipManager : MonoBehaviour
         if (OVRManager.isHmdPresent == true)
         {
             //OVRPose head = OVRManager.tracker.GetPose();
-            Vector3 head = GameObject.Find("CenterEyeAnchor").transform.position;
-            Vector3 headRot = GameObject.Find("CenterEyeAnchor").transform.localEulerAngles;
+
+            // TODO: uh, yeah, don't search for these every frame
+            Vector3 head = _head.transform.position - _headPositionBasis;
+            Vector3 headRot = _head.transform.localEulerAngles;
             Vector3 headRot180 = OneEightify(headRot);
 
             float effectivePitch = headRot180.x + skyboxMat.GetFloat("_RotationX"); // not right, but works here
@@ -413,6 +487,17 @@ public partial class ClipManager : MonoBehaviour
                 //System.Math.Round(hand.y, 3) + " " +
                 //System.Math.Round(hand.z, 3) + " | " +
                 //ClipProvider.GetExternalFilesDir() + " | " +
+                guiLabel("_TestX", 2) + ", " +
+                guiLabel("_TestY", 2) + " |\n| " +
+                guiLabel("_BlurX", 2, Blitter.matteMaskAlphaBlurMat) + ", " +
+                guiLabel("_BlurY", 2, Blitter.matteMaskAlphaBlurMat) + " |\n| " +
+                "|LEFT EYE: " + hpLeft + "|\n|" +
+                "RIGHT EYE: " + hpRight + "|\n|" +
+                "HandOffsets: " + (outliner.handOffsetX+outliner.drHandOffsetX) + "," + (outliner.handOffsetY+outliner.drHandOffsetY) + "|\n|" +
+                //"HandOffsets: " + outliner.handOffsetX + "," + outliner.handOffsetY + "|\n|" +
+                Vector3.Distance(_rightHand.transform.position, new Vector3(_head.transform.position.x, _rightHand.transform.position.y, _head.transform.position.z)) + "|\n|" + 
+//                _handSyncRotationDelta + "|\n|" +
+                skyboxMat.GetInt("_Layout") + "|\n|" + 
                 swatchDetector.screenSpaceIndexColorLeft + "|\n|" +
                 System.Math.Round(laser.maxLength, 2).ToString("0.00") + "|" +
                 System.Math.Round(zc, 2).ToString("0.00") + "," +

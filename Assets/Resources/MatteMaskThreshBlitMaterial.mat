@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: ColorArrayMaskBlitMaterial
-  m_Shader: {fileID: 4800000, guid: 6bb1da078672a49d2bcec4680b4f4dce, type: 3}
+  m_Name: MatteMaskThreshBlitMaterial
+  m_Shader: {fileID: 4800000, guid: 16acc60707cfc4932bafb4fe75daef5f, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -35,10 +35,6 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
-    - _DynAlphaTex:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
     - _EmissionMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -59,6 +55,10 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _MatteTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -71,10 +71,16 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SceneTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Floats:
-    - TestU: 0.14
-    - TestW: 8
-    - TestZ: 0.2
+    - Samples: 5
+    - TestZ: 0.3
+    - _BlurAmount: 1.78
+    - _BlurX: 0.3
+    - _BlurY: 0.6
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
@@ -82,20 +88,28 @@ Material:
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _Layout: 2
+    - _LabThresh: 0.06
+    - _Layout: 0
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
+    - _RgbThresh: 0.13
+    - _RightHandX: 0
+    - _RightHandY: 0
+    - _RightHandZ: 0
+    - _Samples: 0.3
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
-    - _TestV: 1
-    - _TestX: 0.04
-    - _TestY: 0.3
+    - _TestX: 0.01
+    - _TestY: 1
+    - _TestZ: 0
     - _UVSec: 0
     - _ZWrite: 1
+    - _kernelWidth: 12
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _kernel: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []

@@ -15,12 +15,14 @@ using UnityEngine.Video;
 public partial class ClipManager
 {
     // Used for the majority of shader-driven tweaks
-    public void OffsetProp(string prop, float offset, float min, float max)
+    public void OffsetProp(string prop, float offset, float min, float max, Material targetMat = null)
     {
-        float currentValue = skyboxMat.GetFloat(prop);
+        if (!targetMat) targetMat = skyboxMat;
+        float currentValue = targetMat.GetFloat(prop);
         float newValue = Mathf.Clamp(currentValue + offset, min, max);
-        skyboxMat.SetFloat(prop, newValue);
-        clipConfigs[clipPool.index].SetFloatIfPresent(prop, newValue);
+        targetMat.SetFloat(prop, newValue);
+        if (targetMat == skyboxMat)
+            clipConfigs[clipPool.index].SetFloatIfPresent(prop, newValue);
     }
 
     public void EnableDebugGUI()
@@ -58,13 +60,14 @@ public partial class ClipManager
             enteringClip.targetTexture = skyboxTex;
             exitingClip.targetTexture = null;
             skyboxMat.SetInt("_VideoIndex", newIndex);
+            SetLayoutFromResolution(enteringClip);
 
             _undoConfig = null;
             clipConfigs[newIndex].ApplyToMaterial(skyboxMat);
 
+            Blitter.SetCurrentMatte(clipPool.currentMatte); // ignores if null
             PullAndSetMaskState();
             _resetFrameCapture(false); // don't check current mode
-
             enteringClip.Play();
         });
     }
@@ -112,7 +115,7 @@ public partial class ClipManager
 
     public void CycleMaskModes()
     {
-        if (_isDifferenceMaskEnabled == 2) // cycling!
+        if (_isDifferenceMaskEnabled == _differenceMaskCount) // cycling!
             DisableMask();
         else
             EnableMask();

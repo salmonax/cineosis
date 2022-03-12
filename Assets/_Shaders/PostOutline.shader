@@ -71,14 +71,16 @@ Shader "Custom/PostOutline"
                 float ty = _MainTex_TexelSize.y;
                 float intensityRadius = 0;
 
+                float handTermX = ((1 - _RightHandZ/0.4)*16+3);
+                float handTermY = _RightHandY*(0.05 + (1-(_RightHandZ/0.4))*0.50);
                 for (int k=0; k < iterations; k++) {           
-                    intensityRadius += _kernel[k]*tex2D(
+                    intensityRadius += _kernel[k]*tex2Dlod(
                         _MainTex,
-                        float2(
-                            i.uvs.x + (k - iterations*0.5)*tx*((1 - _RightHandZ/0.4)*16+3), /* Z is for blur, not shifting here */
-                            i.uvs.y + _RightHandY*(0.05 + (1-(_RightHandZ/0.4))*0.50) /* Note the Z term for shifting! */
-                            //0,
-                            //0
+                        float4(
+                            i.uvs.x + (k - iterations*0.5)*tx*handTermX, /* Z is for blur, not shifting here */
+                            i.uvs.y + handTermY, /* Note the Z term for shifting! */
+                            0,
+                            100
                             // Tweaked from 2/7 but didn't quite like (smaller minimum shift, minimum blur): 
                             //i.uvs.x + (k - iterations/2)*tx*((1 - _RightHandZ/0.4)*16+1), // Z is for blur, not shifting here
                             //i.uvs.y + _RightHandY*(0.02 + (1-(_RightHandZ/0.4))*0.50) /* Note the Z term for shifting! */
@@ -162,14 +164,16 @@ Shader "Custom/PostOutline"
                 if (unity_StereoEyeIndex == 1)
                     eyeTerm = -0.20;
 
+                float handTermX =  _RightHandX*(0.05 + (1-(_RightHandZ/0.4))*(0.50+eyeTerm));
+                float handTermY = ((1 - _RightHandZ/0.4)*16+3);
                 for (int k=0; k < iterations; k++) {           
-                    intensityRadius += _kernel[k] * tex2D(
+                    intensityRadius += _kernel[k] * tex2Dlod(
                         _GrabTexture,
-                        float2(
-                            i.uvs.x + _RightHandX*(0.05 + (1-(_RightHandZ/0.4))*(0.50+eyeTerm)), /* magnification on Z term */
-                            1-i.uvs.y + (k - iterations*0.5)*ty*((1 - _RightHandZ/0.4)*16+3)
-                            //0,
-                            //0
+                        float4(
+                            i.uvs.x + handTermX, /* magnification on Z term */
+                            1-i.uvs.y + (k - iterations*0.5)*ty*handTermY,
+                            0,
+                            100
                             // Tweaked from 2/7, but didn't quite like (note convoluted clamping and RightHandX-narrowing):
                             //i.uvs.x + max(-0.6,min(_RightHandX/0.3, 0.6))*(0.02 + (1-(_RightHandZ/0.4))*(0.50+eyeTerm)), /* magnification on Z term */
                             //1-i.uvs.y + (k - iterations/2)*ty*((1 - _RightHandZ/0.4)*16+2)

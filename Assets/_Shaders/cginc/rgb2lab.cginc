@@ -65,7 +65,7 @@ float3 lab2rgb( float3 c ) {
 }
 
 
-float lrgb2rgb(float3 color) {
+float3 lrgb2rgb(float3 color) {
     return pow(color.rgb, 1.0/2.2);
 }
 float cie76(float3 color1, float3 color2) {
@@ -98,4 +98,21 @@ float cie94(float3 labA, float3 labB) {
                     pow(deltaC/(kc*sc), 2) +
                     pow(deltaH/(kh*sh), 2);
     return i < 0 ? 0 : sqrt(i);
+}
+
+float3 rgb_to_ycbcr(float3 rgb) {
+    float y = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+    float cb = (rgb.b - y) * 0.565;
+    float cr = (rgb.r - y) * 0.713;
+
+    return float3(y, cb, cr);
+}
+
+
+float3 LinearToSRGB(float3 c)
+{
+    float3 sRGBLo = c * 12.92;
+    float3 sRGBHi = (abs(pow(c, float3(1.0/2.4, 1.0/2.4, 1.0/2.4))) * 1.055) - 0.055;
+    float3 sRGB   = (c <= 0.0031308) ? sRGBLo : sRGBHi;
+    return sRGB;
 }

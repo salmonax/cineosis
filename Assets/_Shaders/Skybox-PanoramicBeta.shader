@@ -1,6 +1,10 @@
-Shader "Skybox/PanoramicBeta" {
+Shader "Skybox/CineosisPanoramic" {
 Properties {
     UseDifferenceMask("Use Difference Mask", Float) = 0
+    _TestX ("TestX", Range(0, 5)) = 0
+    _TestY ("TestY", Range(0, 50)) = 0
+    _TestZ ("TestZ", Range(0, 5)) = 0
+    _TestW ("TestW", Range(0, 5)) = 0
     [MaterialToggle] _UseSwatchPickerMode("Use Swatch Picker Mode", Float) = 0
     //_LeftColorExclusionArray("Left Color Exclusion Array", Color) = (0,0,0)
     //_RightColorExclusionArray("Right Color Exclusion Array", Color) = (0,0,0)
@@ -33,12 +37,14 @@ Properties {
      VideoIndex("VideoIndex", Range(0, 2)) = 0
     [NoScaleOffset] _Tex ("Spherical  (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _MatteTex ("Spherical Matte Texture (HDR)", 2D) = "grey" {}
+    [NoScaleOffset] _MatteMaskAlphaTex ("Spherical Matte Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _LastTex ("LAST Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _LastTex2 ("LAST Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _LastTex3 ("LAST Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _AlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _DynAlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _ExclusionDrawMaskTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
+    [NoScaleOffset] _LightingTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
     [NoScaleOffset] _TestTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
 
     [NoScaleOffset]  SmallFrameTex ("Small Frame Tex Spherical Texture (HDR)", 2D) = "grey" {}
@@ -68,8 +74,14 @@ SubShader {
         #include "./cginc/rgb2lab.cginc"
         #include "./cginc/blur.cginc"
         #include "./cginc/hsbe.cginc"
+        #include "./cginc/masking.cginc"
+        #include "./cginc/shapes.cginc"
 
         float4 _ColorTest;
+        float _TestX;
+        float _TestY;
+        float _TestZ;
+        float _TestW;
         float2 _LaserCoord;
         float _AutoShiftRotationXNudgeFactor; // multiplied against ShiftY; should be 0 if autoshift is off
         float3 _ColorTestArray[1];
@@ -89,7 +101,9 @@ SubShader {
         sampler2D _SmallFrameTex;
         sampler2D _ScreenSpaceHelperTex;
         sampler2D _ExclusionDrawMaskTex;
+        sampler2D _LightingTex;
         sampler2D _TestTex;
+        sampler2D _MatteMaskAlphaTex;
         float4 _Tex_TexelSize;
         float4 _LastTex_TexelSize;
         float4 _AlphaTex_TexelSize;
@@ -124,10 +138,10 @@ SubShader {
         float _MatteThresholdB;
         bool _UseScreenSpaceHelper;
         bool _UseLight = 0;
+        int _Layout;
 #ifndef _MAPPING_6_FRAMES_LAYOUT
         bool _MirrorOnBack;
         int _ImageType;
-        int _Layout;
 #endif
 
 #ifndef _MAPPING_6_FRAMES_LAYOUT
@@ -198,7 +212,6 @@ SubShader {
             float H = abs((Q.w - Q.y) / (6 * C + Epsilon) + Q.z);
             return float3(H, C, Q.x);
         }
-
         
         float3 RGBtoHSV(in float3 RGB)
         {
@@ -251,8 +264,16 @@ SubShader {
             v2f o;
             UNITY_SETUP_INSTANCE_ID(v);
             UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
-            float3 rotated = RotateAroundYInDegrees(v.vertex, _RotationY);
-            rotated = RotateAroundXInDegrees(rotated, _RotationX + _ZoomShiftY*_AutoShiftRotationXNudgeFactor + _Zoom*_RotationShiftX);
+            float layoutRotationY = 0;
+            float3 rotated;
+            if (_Layout == 2) {
+                layoutRotationY = 90;
+                rotated = RotateAroundYInDegrees(v.vertex, _RotationY + layoutRotationY);
+                rotated = RotateAroundXInDegrees(rotated, _RotationX + _ZoomShiftY*_AutoShiftRotationXNudgeFactor + _Zoom*_RotationShiftX);
+            } else {
+                rotated = RotateAroundXInDegrees(v.vertex, _RotationX + _ZoomShiftY*_AutoShiftRotationXNudgeFactor + _Zoom*_RotationShiftX);
+                rotated = RotateAroundYInDegrees(rotated, _RotationY + layoutRotationY);
+            }
             o.vertex = UnityObjectToClipPos(rotated);
             o.texcoord = v.vertex.xyz;
 #ifdef _MAPPING_6_FRAMES_LAYOUT
@@ -327,7 +348,7 @@ SubShader {
 
                 o.layout3DScaleAndOffset = float4(unity_StereoEyeIndex,0,0.5,1 + round(_ZoomAdjust * 1000)/1000);
             else // Over-Under 3D layout
-                o.layout3DScaleAndOffset = float4(0, 1-unity_StereoEyeIndex,1,0.5);
+                o.layout3DScaleAndOffset = float4(0, 1-unity_StereoEyeIndex,1,0.5); // no _ZoomAdjust for now... kind of antiquated
 #endif
             return o;
         }
@@ -338,13 +359,21 @@ SubShader {
             float2 tc = ToCubeCoords(i.texcoord, i.layout, i.edgeSize, i.faceXCoordLayouts, i.faceYCoordLayouts, i.faceZCoordLayouts);
 #else
             float2 tc = ToRadialCoords(i.texcoord);
-            if (tc.x > i.image180ScaleAndCutoff[1])
-                return half4(0,0,0,0);
-            if (tc.x < 0.48-i.image180ScaleAndCutoff[1])
-                return half4(0,0,0,0);
 
-            tc.x = fmod(tc.x*i.image180ScaleAndCutoff[0], 6);
+            float layoutZoomShiftX = 0;
+            if (_Layout != 2) {
+                if (tc.x > i.image180ScaleAndCutoff[1])
+                    return half4(0,0,0,0);
+                if (tc.x < 0.48-i.image180ScaleAndCutoff[1])
+                    return half4(0,0,0,0);
+                tc.x = fmod(tc.x*i.image180ScaleAndCutoff[0], 6);
+
+            } else {
+                layoutZoomShiftX = 0.70*0.5;
+            }
+
             // Note: below is mine
+            // I might not actually need this.
 
             tc.y = fmod(tc.y*i.image180ScaleAndCutoff[0]/2, 6); // add scale to y; needs centering
 
@@ -352,16 +381,19 @@ SubShader {
 
             tc = (tc + i.layout3DScaleAndOffset.xy) * i.layout3DScaleAndOffset.zw;
 
+            if (_Layout == 2)
+                tc.x *= 1+(_Zoom*0.5);
+
             // Flip
             // use first value to do horizontal offset
             // only works with side-by-side for now
 
-            if (i.layout3DScaleAndOffset.x == 1)
+            if (unity_StereoEyeIndex == 1)
                 if (_VideoIndex != 1)
                     tc.x -= (_HorizontalOffset + _NudgeZ) * 0.02;
                 else 
                     tc.x = 1.00 - tc.x - (_HorizontalOffset + _NudgeZ) * 0.02;
-            if (i.layout3DScaleAndOffset.x == 0)
+            if (unity_StereoEyeIndex == 0)
                 if (_VideoIndex != 1)
                     tc.x += (_HorizontalOffset + _NudgeZ) * 0.02;
                 else
@@ -375,7 +407,7 @@ SubShader {
             if (_VideoIndex == 1)
                 tc.x -= _NudgeX - round(_Zoom*(0.14285+_ZoomShiftX*0.5) * 1000)/1000; // headset movement compensation, with centering term! (was 7, ~0.14285)
              else
-                tc.x += _NudgeX - round(_Zoom*(0.11111+_ZoomShiftX*0.5) * 1000)/1000; // headset movement compensation, with centering term! (was 9, ~0.11111)
+                tc.x += _NudgeX - round(_Zoom*(0.11111+(_ZoomShiftX+layoutZoomShiftX)*0.5) * 1000)/1000; // headset movement compensation, with centering term! (was 9, ~0.11111)
 
             if (_VideoIndex == 1)
                 tc.y -= _NudgeY + round(_Zoom*(0.2+(_ZoomShiftY)*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 5, 0.2)
@@ -442,20 +474,10 @@ SubShader {
             //float screenThresh = abs(tc.x - 0.25)*5;
             //float screenThresh = pow(tc.x - 0.25, 0.5)*2;
 
-            float eyeFactor = 0;
-            if (tc.x > 0.5)
-                eyeFactor = 0.5;
 
-            //float stX = pow(tc.x - (0.25 + eyeFactor), 2)*25; // was 25.    
-            //float stY = pow(tc.y, 1.5); // was 1.5, no shift term
+           float screenThresh = getScreenThresh(_Layout, tc);
 
-            float stX = pow(tc.x - (0.25 + eyeFactor), 2)*40; // was 25.    
-            float stY = pow(tc.y, 0.6) - 0.35; // was 1.5, no shift term
- 
-            float screenThresh = (stX + stY)/2;
-
-
-            tex.a = maxAlpha;
+           tex.a = maxAlpha;
 
             //float screenThresh = BlendHardLight(float3(stX, stX, stX), float3(stY, stY, stY)).x;
                
@@ -520,9 +542,6 @@ SubShader {
                     tex.a += maxAlpha/6;*/
             }
                 
-
-
-
             // Assumes left-right
 
 /*
@@ -559,8 +578,77 @@ SubShader {
             //if (abs(tex.r) - abs(tex.g + tex.b)/2 > _MatteThresholdG)
                // tex.a = 1;
             */
+            if (_UseDifferenceMask == 90) {
+                tex.a = 0;
+                //if (tex.r - tex.b >= 0.02)
+                    //    tex.a = 1;
+                //if (tex.r - tex.g >= 0.02)
+                      //  tex.a = 1;
 
-            if (_UseDifferenceMask == 0) {
+                //tex.a = 0;
+                float3 foo = LinearToSRGB(tex.rgb);
+                float3 foo2 = RGBtoHSV(foo);
+                //if (foo.r > 0.373 && foo.g > 0.157 && foo.b > 0.0784)
+                  //if (max(foo.r,max(foo.g,foo.b))-min(foo.r,min(foo.g,foo.b)) > 0.0588)
+                if (foo.r > _TestX && foo.g > _TestY && foo.b > _TestZ && max(foo.r,max(foo.g,foo.b))-min(foo.r,min(foo.g,foo.b)) > 0.0588)
+                    if (abs(foo.r - foo.g) > _TestW && foo.r > foo.g && foo.r > foo.b)
+
+                    //if (abs(foo.r - foo.g) > 0.0588 && foo.r > foo.g && foo.r > foo.b)
+                        if (foo2.x < 0.196)
+                            tex.a = 1;
+            }
+
+            if (_UseDifferenceMask == 3) {
+                tex.a = pow(tex2D(_MatteMaskAlphaTex, tc)*_TestX, _TestY)*maxAlpha;
+
+                //tex.a = tex2D(_MatteMaskAlphaTex, tc) * maxAlpha;
+                //tex.a = 0;
+
+/*
+                half4 matteAlpha = tex2D(_MatteMaskAlphaTex, tc);
+                return matteAlpha;
+                float weight = pow(matteAlpha*_TestX, _TestY).r;
+                //tex.a = pow(matteAlpha*_TestX, _TestY).r;
+*/
+
+                /*
+                float d1 = cie94(texLab, lastLab);
+                float d2 = cie94(texLab, lastLab2);
+                float d3 = cie94(texLab, lastLab3);
+
+                if (pow(d1, 0.33) > _TestZ)
+                    tex.a = 1;
+                if (pow(d2, 0.33) > _TestZ)
+                    tex.a = 1;
+                if (pow(d3, 0.33) > _TestZ)
+                    tex.a = 1;*/
+
+
+                //tex.a = matteAlpha.r;
+
+
+                //return tex2D(_MatteMaskAlphaTex, tc);
+
+                half4 matte = tex2D(_MatteTex, tc);
+
+                // < 0.06 for lab; 0.16 for lrgb.
+                
+
+                //float wat = cie76(tex, matte);
+                //float watLab = cie76(rgb2lab(tex), rgb2lab(matte));
+               // float watHSV = cie76(RGBtoHSV(tex), RGBtoHSV(matte));
+
+                //if (wat < 0.13/weight && watLab < 0.06/weight)// && watHSV < _TestX)
+                   //tex.a = 0;
+
+                //if (wat < _TestX && watLab < _TestY)// && watHSV < _TestX)
+
+                //tex.a = pow((wat/_TestZ + watLab/_TestW)/2*_TestX, _TestY);
+                
+            }
+
+
+            if (_UseDifferenceMask == 10) {
                 if (_VideoIndex == 0)
                     if (tex.r - tex.b < 0.02)
                         if (i.texcoord.x > 0.15)
@@ -661,8 +749,8 @@ SubShader {
             
 
             exposure(tex, _Exposure);
-            saturation(tex, _Saturation);
             contrast(tex, _Contrast);
+            saturation(tex, _Saturation);
                 /* NOTE: it turns out that Hue and Chroma seem to
                  * work better for filtering */
 
@@ -705,7 +793,7 @@ SubShader {
 
           if (_UseDifferenceMask == 2) {
               /* was 1.5, 2.5 for a while: */
-              tex.a = min(pow(colorMask*1.25, 1.75),1) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
+              tex.a = min(pow(colorMask*1.25, 1.25),1) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
               //tex.a = min(colorMask*3,1) * maxAlpha;// pow(colorMask*1.5, 1.5) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
               tex.rgb *= tex.a;
 
@@ -715,11 +803,17 @@ SubShader {
 
           //if (i.texcoord.x < 0.25 && i.texcoord.x > 0.25-_Tex_TexelSize.x*1000 && i.texcoord.y < 0.25 && i.texcoord.y > 0.25-_Tex_TexelSize.x*1000)
             //tex.rgb = 1;
-          float pointLight = ((1-dist(float2(_LaserCoord.x/9.5,_LaserCoord.y/9.5), float2(i.texcoord.x*1.25, i.texcoord.y*1.25)))+0.5);
+          //float pointLight = ((1-dist(float2(_LaserCoord.x/9.5,_LaserCoord.y/9.5), float2(i.texcoord.x*1.25, i.texcoord.y*1.25)))+0.5);
+
+          //float pointLight = circle(tc, _LaserCoord, 0.1, 0);
 
           //return tex2D(_ScreenSpaceHelperTex, tc);
 
+          float pointLight = tex2D(_LightingTex, tc).r;
           if (_UseLight == 1)
+            //return float4(0,0,0,1);
+            //return tex2D(_LightingTex, tc);
+            //return pointLight;
             tex = float4(tex.rgb*(pow(pointLight/pow(_Exposure+0.05, 0.2), 7)+1), tex.a);
 
           tex.a *= tex2D(_ExclusionDrawMaskTex, tc).r;

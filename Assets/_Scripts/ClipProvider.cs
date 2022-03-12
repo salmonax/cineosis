@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Video;
 using UnityEngine.Android;
+using System.IO;
 
 /* ClipProvider is currently just a simple way to encapsulate local vs. externally
  * loaded clips. It also wraps a permission check.
@@ -32,6 +33,7 @@ public class ClipProvider
 
     public static VideoPlayer GetExternal(string name)
     {
+        // TODO: Check existence!
         VideoPlayer loadedPlayer = new GameObject().AddComponent<VideoPlayer>();
 
         // Applying (most) of the same defaults as the APK-loaded videos:
@@ -43,6 +45,26 @@ public class ClipProvider
         loadedPlayer.url = platformClipsPath + name + ".mp4";
 
         return loadedPlayer;
+    }
+
+    public static Texture2D GetExternalMatte(string name)
+    {
+        Texture2D tex = null;
+        byte[] fileData;
+
+        string matteFilePath = platformClipsPath + name + ".png";
+
+        if (File.Exists(matteFilePath))
+        {
+            Debug.Log("Found:" + name);
+            fileData = File.ReadAllBytes(matteFilePath);
+            tex = new Texture2D(2, 2);
+            tex.LoadImage(fileData);
+        } else
+        {
+            Debug.Log("NOT FOUND: " + name);
+        }
+        return tex;
     }
 
     public static void CheckAndRequestPermissions()
@@ -60,7 +82,7 @@ public class ClipProvider
         {
             try
             {
-                path = System.IO.Directory.GetFiles(CoreConfig.deviceBasePath + "Download")[0];
+                path = Directory.GetFiles(CoreConfig.deviceBasePath + "Download")[0];
             }
             catch (System.Exception e)
             {

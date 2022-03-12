@@ -35,41 +35,8 @@ public class SwatchPicker : MonoBehaviour
 
     ColorWarden _colorWarden;
 
-    private RenderTexture _screenSpaceHelperTex;
-    private RenderTexture _exclusionTex;
-
-    void RenderScreenSpaceHelper(Material renderMat)
-    {
-        var curVidTex = clipManager.clipPool.current.texture;
-        _screenSpaceHelperTex = new RenderTexture(2048, 1024, 16);
-        RenderTexture.active = _screenSpaceHelperTex;
-        GL.Clear(true, true, Color.white);
-        Graphics.Blit(null, _screenSpaceHelperTex, renderMat);
-        skyboxMat.SetTexture("_ScreenSpaceHelperTex", _screenSpaceHelperTex);
-    }
-
-    Material exclusionMat;
-
-    void InitExclusionMask()
-    {
-        if (!_exclusionTex)
-            _exclusionTex = new RenderTexture(1440, 720, 0); // no depth map dammit!
-        RenderTexture.active = _exclusionTex;
-        GL.Clear(true, true, Color.white); // won't use color, but sig needs it
-        Graphics.Blit(null, _exclusionTex, Resources.Load<Material>("DummyMaterial"));
-        exclusionMat.SetTexture("_LastTex", _exclusionTex);
-        RenderTexture.active = null;
-    }
-
-    void RenderExclusionMaskTick()
-    {
-        RenderTexture.active = _exclusionTex;
-        GL.Clear(false, false, Color.white); // won't use color, but sig needs it
-        exclusionMat.SetFloat("_DeleteMode", _mode == SwatchPickerMode.MaskDrawDeleteExclusion ? 1 : 0);
-        Graphics.Blit(null, _exclusionTex, exclusionMat);
-        exclusionMat.SetTexture("_LastTex", _exclusionTex);
-        RenderTexture.active = null;
-    }
+    void RenderExclusionMaskTick(Vector2 coord, Material? maybeMat = null) =>
+           Blitter.RenderExclusionMaskTick(coord,_mode == SwatchPickerMode.MaskDrawDeleteExclusion, maybeMat);
 
     void Start()
     {
@@ -78,7 +45,6 @@ public class SwatchPicker : MonoBehaviour
         camera = GameObject.Find("CenterEyeAnchor").GetComponent<Camera>();
 
         colorMaskMat = Blitter.colorMaskBlitMat; //Resources.Load<Material>("ColorArrayMaskBlitMaterial");
-        exclusionMat = Resources.Load<Material>("ExclusionMaskBlitMaterial");
 
         clipManager = GameObject.Find("Core").GetComponent<ClipManager>();
 
@@ -103,12 +69,14 @@ public class SwatchPicker : MonoBehaviour
 
         debugText = GameObject.Find("DebugText").GetComponent<UnityEngine.UI.Text>();
 
-        Material screenSpaceHelperMat = Resources.Load<Material>("ScreenSpaceHelperMaterial");
+        //Material screenSpaceHelperMat = Resources.Load<Material>("ScreenSpaceHelperMaterial");
+        //clipManager.clipPool.current.prepareCompleted += (_) => RenderScreenSpaceHelper(screenSpaceHelperMat);
 
-        clipManager.clipPool.current.prepareCompleted += (_) => RenderScreenSpaceHelper(screenSpaceHelperMat);
+        // This should probably just go in ClipManager.
+        Blitter.ApplyScreenSpaceHelper(skyboxMat);
 
         Disable(); // start off!
-        InitExclusionMask();
+        Blitter.InitExclusionMask();
     }
 
 
@@ -226,7 +194,7 @@ public class SwatchPicker : MonoBehaviour
     public void ResetCurrentMode()
     {
         if (_mode > SwatchPickerMode.Paused) // urgh, do something better here
-            InitExclusionMask();
+            Blitter.InitExclusionMask();
         else
             MakeFreshSwatches();
     }
@@ -304,7 +272,7 @@ public class SwatchPicker : MonoBehaviour
             _tempCam.Render();
             skyboxMat.SetFloat("_UseSwatchPickerMode", 0);
 
-            if (_mode > SwatchPickerMode.MaskPaused)
+            if (_mode > SwatchPickerMode.MaskPaused || _useLightMode == 1)
             {
                 _tempCam.targetTexture = currentEyeHelper;
                 skyboxMat.SetFloat("_UseScreenSpaceHelper", 1);
@@ -337,6 +305,11 @@ public class SwatchPicker : MonoBehaviour
         else
             _useLightMode = (_useLightMode + 1) % 3;
         skyboxMat.SetFloat("_UseLight", _useLightMode > 0 ? 1 : 0);
+    }
+    public void UseAndPlaceLight()
+    {
+        _useLightMode = 1;
+        skyboxMat.SetFloat("_UseLight", 1);
     }
 
 
@@ -391,29 +364,16 @@ public class SwatchPicker : MonoBehaviour
                 }
 
                 if (_mode > SwatchPickerMode.MaskPaused)
-                {
-                    exclusionMat.SetVector("_LaserCoord", new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g));
-                    RenderExclusionMaskTick();
-                    // Hmm, I should only have to do this once per two-eye cycle, especially
-                    // since there's no frameskip.
-                    //skyboxMat.SetTexture("_ExclusionDrawMaskTex", _exclusionTex);
-                }
+                    RenderExclusionMaskTick(
+                        new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g)
+                    ); // send true if in delete mode
 
+                // (Note: the following also called from the ClipManager's OnFrameReady, but
+                // only when the video is playing; it's used here to keep the colormask updated
+                // even when the video is paused.)
                 // Only do this once per two-eye render cycle; left eye is fine:
                 if (clipManager.clipPool.current.isPaused)
                     clipManager.RenderColorMaskTick(clipManager.lastSource);
-
-                // Note: this is bunk. See DrawMaskBlit for how to do it right.
-                // This is also one-eye only, though it's anybody's guess why it even
-                // works.
-                var lightPosition = new Vector2(
-                    (screenSpaceIndexColorLeft.r - 0.25f) * 60, // for SBS
-                    (screenSpaceIndexColorLeft.g - 0.50f) * 30
-                );
-
-                // Wait a minute... how the hell is this working in the second eye?
-                if (_useLightMode == 1)
-                    skyboxMat.SetVector("_LaserCoord", lightPosition);
 
             } else
             {
@@ -428,18 +388,33 @@ public class SwatchPicker : MonoBehaviour
                     _colorWarden.Exclude(swatchMaterialRight.color);
                     colorMaskMat.SetColorArray("_LeftColorExclusionArray", _colorWarden.Exclusions);
                 }
-            }
 
-            if (_mode > SwatchPickerMode.MaskPaused)
-            {
-                exclusionMat.SetVector("_LaserCoord", new Vector2(screenSpaceIndexColorRight.r, screenSpaceIndexColorRight.g));
-                RenderExclusionMaskTick();
-                skyboxMat.SetTexture("_ExclusionDrawMaskTex", _exclusionTex);
+                if (_mode > SwatchPickerMode.MaskPaused)
+                    RenderExclusionMaskTick(
+                        new Vector2(screenSpaceIndexColorRight.r, screenSpaceIndexColorRight.g),
+                        skyboxMat // renders when a material is passed in; only do this once per two-eye render cycle
+                    );
+
+                // Currently just rendering both coords in one go:
+                if (_useLightMode == 1)
+                    Blitter.RenderLightingTick(
+                        new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g),
+                        new Vector2(screenSpaceIndexColorRight.r, screenSpaceIndexColorRight.g),
+                        skyboxMat
+                    );
             }
 
             if (VR.Mono)
+            {
                 // Just render screenSpaceIndex on the right, since we can't do anything else:
-                swatchMaterialRight.color = screenSpaceIndexColor;                
+                swatchMaterialRight.color = screenSpaceIndexColor;
+
+                Blitter.RenderLightingTick(
+                    new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g),
+                    new Vector2(0,0),
+                    skyboxMat
+                );
+            }
         }
     }
 }

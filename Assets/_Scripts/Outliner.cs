@@ -10,11 +10,14 @@ public class Outliner : MonoBehaviour
     Material _outlineMaterial;
     Material _compositingMaterial;
 
+    Material _filmGrainMaterial;
+
     Camera _tempCam;
     Camera camera;
 
     GameObject rightHand;
-
+    SkinnedMeshRenderer rightHandRenderer;
+    MeshRenderer debugSphereRenderer;
 
     float[] kernel;
 
@@ -23,6 +26,7 @@ public class Outliner : MonoBehaviour
     {
         _outlineMaterial = Resources.Load<Material>("OutlinerMaterial");
         _compositingMaterial = Resources.Load<Material>("CompositingMaterial");
+        _filmGrainMaterial = Resources.Load<Material>("FilmGrainMaterial");
         // for outlined objects
         _tempCam = new GameObject().AddComponent<Camera>();
         _tempCam.enabled = false;
@@ -35,6 +39,12 @@ public class Outliner : MonoBehaviour
         _outlineMaterial.SetInt("_kernelWidth", kernel.Length);
 
         rightHand = GameObject.Find("RightControllerAnchor");
+        rightHandRenderer = GameObject.Find("OVRHandPrefab").GetComponent<SkinnedMeshRenderer>();
+        //debugSphereRenderer = GameObject.Find("Sphere").GetComponent<MeshRenderer>();
+
+        rightHandRenderer.forceRenderingOff = true;
+
+        //debugSphereRenderer.forceRenderingOff = true;
     }
 
     // Update is called once per frame
@@ -57,17 +67,28 @@ public class Outliner : MonoBehaviour
     RenderTexture rightEye;
     RenderTexture rawLeftEye;
     RenderTexture rawRightEye;
+    RenderTexture featheredLeftEye;
+    RenderTexture featheredRightEye;
+
+    RenderTexture grainLeftEye;
+    RenderTexture grainRightEye;
+
+    // Note: these are just pointers to the left/right eye RTs above:
     RenderTexture blurredOutlineRt;
     RenderTexture rawOutlineRt;
-    int frameSkip = 0;
+    RenderTexture featheredOutlineRt;
+
+    RenderTexture grainRt;
+
+    int frameSkip = 1;
     int leftFrameIdx = 0;
     int rightFrameIdx = 0;
 
     // NOTE: these are the last screen-relative hand positions
     // TODO: change the names!
-    Vector2 lastScreenLeft;
-    Vector2 lastScreenRight;
-    Vector2 lastScreen;
+    Vector2 lastScreenRelativeHandPosLeft;
+    Vector2 lastScreenRelativeHandPosRight;
+    Vector2 lastScreenRelativeHandPos;
 
     private void OnPreRender()
     {
@@ -80,46 +101,68 @@ public class Outliner : MonoBehaviour
         _tempCam.cullingMask = 1 << LayerMask.NameToLayer("Outline");
 
         RenderTextureDescriptor desc = VR.desc;
-        //desc.width /= 2;
-        //desc.height /= 2;
+        
         if (VR.Left)
         {
             if (!leftEye)
             {
+                desc.width /= 2;
+                desc.height /= 2;
+                grainLeftEye = new RenderTexture(desc);
+
                 rawLeftEye = new RenderTexture(desc);
-                rawLeftEye.filterMode = FilterMode.Point;
+                //rawLeftEye.filterMode = FilterMode.Point;
 
                 leftEye = new RenderTexture(desc);
-                leftEye.filterMode = FilterMode.Point;
+                //leftEye.filterMode = FilterMode.Point;
+
+                featheredLeftEye = new RenderTexture(desc);
+                //leftEye.filterMode = FilterMode.Point;
+
             }
             rawOutlineRt = rawLeftEye;
             blurredOutlineRt = leftEye;
+            featheredOutlineRt = featheredLeftEye;
+            grainRt = grainLeftEye;
 
             leftFrameIdx = (leftFrameIdx + 1) % (frameSkip + 1);
             curFrame = leftFrameIdx;
 
-            lastScreen = lastScreenLeft;
+            lastScreenRelativeHandPos = lastScreenRelativeHandPosLeft;
         } else if (VR.Right)
         {
             if (!rightEye)
             {
+                desc.width /= 2;
+                desc.height /= 2;
+                grainRightEye = new RenderTexture(desc);
+
                 rawRightEye = new RenderTexture(desc);
-                rawRightEye.filterMode = FilterMode.Point;
+                //rawRightEye.filterMode = FilterMode.Point;
 
                 rightEye = new RenderTexture(desc);
-                rightEye.filterMode = FilterMode.Point;
+                //rightEye.filterMode = FilterMode.Point;
+
+                featheredRightEye = new RenderTexture(desc);
+
             }
             rawOutlineRt = rawRightEye;
             blurredOutlineRt = rightEye;
+            featheredOutlineRt = featheredRightEye;
+            grainRt = grainRightEye;
 
             rightFrameIdx = (rightFrameIdx + 1) % (frameSkip + 1);
             curFrame = rightFrameIdx;
 
-            lastScreen = lastScreenRight;
+            lastScreenRelativeHandPos = lastScreenRelativeHandPosRight;
         } else
         {
+            desc.width /= 2;
+            desc.height /= 2;
             if (!blurredOutlineRt) blurredOutlineRt = new RenderTexture(desc);
             if (!rawOutlineRt) rawOutlineRt = new RenderTexture(desc);
+            if (!featheredOutlineRt) featheredOutlineRt = new RenderTexture(desc);
+            if (!grainRt) grainRt = new RenderTexture(desc);
         }
 
         //rt = RenderTexture.GetTemporary(desc);
@@ -129,42 +172,81 @@ public class Outliner : MonoBehaviour
         //rt.height /= 2;
 
         _tempCam.targetTexture = rawOutlineRt;
+
+        rightHandRenderer.forceRenderingOff = false;
+
+        //debugSphereRenderer.forceRenderingOff = false;
         _tempCam.RenderWithShader(DrawAsSolidColor, "");
 
-            
+        rightHandRenderer.forceRenderingOff = true;
+
+
+        //debugSphereRenderer.forceRenderingOff = true;
+
         // NOTE: mask should stay constantly updated!
         // Only the GRAB PASS BLUR is subject to delays!
 
+        // For passthrough cutout mode:
+        Blitter.Clear(rawOutlineRt, featheredOutlineRt, Blitter.outlinerHandBlurMat);
+
         if (curFrame <= 0) // in case individual eye not triggered
         {
-
+            /*
             if (VR.Left)
-                lastScreen = lastScreenLeft =
+                lastScreenRelativeHandPos = lastScreenRelativeHandPosLeft =
                     Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
             else if (VR.Right)
-                lastScreen = lastScreenRight =
+                lastScreenRelativeHandPos = lastScreenRelativeHandPosRight =
                     Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
-                //RenderTexture rawOutlineRt = RenderTexture.GetTemporary(desc);
+            */
+            //RenderTexture rawOutlineRt = RenderTexture.GetTemporary(desc);
 
-            Graphics.Blit(rawOutlineRt, blurredOutlineRt, _outlineMaterial);
+            //Graphics.Blit(rawOutlineRt, blurredOutlineRt, _outlineMaterial);
             //RenderTexture.ReleaseTemporary(rawOutlineRt);
         }
 
     }
 
+    public float handOffsetX = 0;
+    public float handOffsetY = 0;
+    public float drHandOffsetX = 0;
+    public float drHandOffsetY = 0;
     private void OnRenderImage(RenderTexture src, RenderTexture dst)
     {
         var curScreen = Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
-        var handDeltaX = curScreen.x - lastScreen.x;
-        var handDeltaY = curScreen.y - lastScreen.y;
+        if (VR.Left) ClipManager.hpLeft = curScreen;
+        if (VR.Right) ClipManager.hpRight = curScreen;
+
+        var handDeltaX = curScreen.x - lastScreenRelativeHandPos.x;
+        var handDeltaY = curScreen.y - lastScreenRelativeHandPos.y;
 
         // Turned frame skipping off, so always passing 0 delta.
-        //_compositingMaterial.SetFloat("_RightHandDeltaX", handDeltaX);
-        //_compositingMaterial.SetFloat("_RightHandDeltaY", handDeltaY);
+        //if (frameSkip > 0)
+        //{
+            //_compositingMaterial.SetFloat("_RightHandDeltaX", handDeltaX);
+            //_compositingMaterial.SetFloat("_RightHandDeltaY", handDeltaY);
+        //}
+
+        // Only do the clever hand-offset when not showing the controller model:
+        if (OVRInput.IsControllerConnected(OVRInput.Controller.Hands))
+        {
+            drHandOffsetX = 0.051f * curScreen.x - 35;
+            drHandOffsetY = 0.070f * curScreen.y - 27;
+        } else
+            drHandOffsetX = drHandOffsetY = 0;
+
+        Blitter.Clear(src, grainRt, _filmGrainMaterial);
+        //_compositingMaterial.SetFloat("_HandOffsetX", handOffsetX);
+        //_compositingMaterial.SetFloat("_HandOffsetY", handOffsetY);
+        _compositingMaterial.SetFloat("_HandOffsetX", drHandOffsetX + handOffsetX);
+        _compositingMaterial.SetFloat("_HandOffsetY", drHandOffsetY + handOffsetY);
+        _compositingMaterial.SetTexture("_GrainTex", grainRt);
         _compositingMaterial.SetTexture("_SceneTex", src);
-        _compositingMaterial.SetTexture("_MaskTex", rawOutlineRt);
+        _compositingMaterial.SetTexture("_MaskTex", featheredOutlineRt);
+        //_compositingMaterial.SetTexture("_MaskTex", rawOutlineRt);
 
         //_outlineMaterial.SetTexture("_SceneTex", src);
+
 
         Graphics.Blit(blurredOutlineRt, dst, _compositingMaterial);
 
