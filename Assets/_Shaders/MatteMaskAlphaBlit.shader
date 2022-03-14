@@ -5,6 +5,8 @@ Shader "Unlit/MatteMaskAlphaBlit"
         _MatteTex ("Matte Texture", 2D) = "white" {}
         _ThreshTex ("Threshold Texture", 2D) = "white" {}
         _MainTex ("Frame Texture (Main)", 2D) = "white" {}
+        _WeightMultiplier ("Weight Multiplier (3.03)", Range(0.5, 30)) = 3.03
+        _WeightPower ("Weight Power (3.61)", Range(0.5, 30)) = 3.61
         _RgbThresh ("RGB Threshold (0.13)", Range(0, 1)) = 0.13
         _LabThresh ("Lab Threshold (0.06)", Range(0, 0.5)) = 0.06
         [Enum(None, 0, Side by Side, 1, Over Under, 2)] _Layout("3D Layout", Float) = 0
@@ -46,6 +48,10 @@ Shader "Unlit/MatteMaskAlphaBlit"
 
             float _Layout;
 
+            // magic numbers from skyboxMat TestX/Y tweaking:
+            float _WeightMultiplier;
+            float _WeightPower;
+
             v2f vert (appdata v)
             {
                 v2f o;
@@ -62,13 +68,13 @@ Shader "Unlit/MatteMaskAlphaBlit"
 
                 //return thresh;
 
-                float weight = pow(thresh*3.03, 3.61).r; // from skybox TestX/Y nums
+                float weight = pow(thresh*_WeightMultiplier, _WeightPower).r; // from skybox TestX/Y nums
 
-                float wat = cie76(tex, matte);
-                float watLab = cie76(rgb2lab(tex), rgb2lab(matte));
+                float rgbDist = cie76(tex, matte);
+                float labDist = cie76(rgb2lab(tex), rgb2lab(matte));
 
                 float4 output = float4(1,1,1,1);
-                if (wat < _RgbThresh/weight && watLab < _LabThresh/weight)
+                if (rgbDist < _RgbThresh/weight && labDist < _LabThresh/weight)
                     output = float4(0,0,0,1);
                 return output;
             }

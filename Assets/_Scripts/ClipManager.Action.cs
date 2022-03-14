@@ -38,6 +38,22 @@ public partial class ClipManager
         if (forceSwatchPickerOff) swatchDetector.Disable();
     }
 
+    public void AdjustMaskMultiplier(float amount)
+    {
+        if (_isDifferenceMaskEnabled == 3)
+            OffsetProp("_MatteAlphaMultiplier", amount*0.1f, 1.0f, 30);
+        else if (_isDifferenceMaskEnabled == 1)
+            OffsetProp("_TestX", amount * 0.1f, 1.0f, 30);
+
+    }
+    public void AdjustMaskPower(float amount)
+    {
+        if (_isDifferenceMaskEnabled == 3)
+            OffsetProp("_MatteAlphaPower", amount * 0.1f, 1.0f, 30);
+        else if (_isDifferenceMaskEnabled == 1)
+            OffsetProp("_TestY", amount * 0.1f, 1.0f, 30);
+    }
+
     // Re-save configs if a user-update has caused needsUpdate to be true
     // (This is invoked on idle, so not quite an input)
     public void UpdateDirtyConfig()

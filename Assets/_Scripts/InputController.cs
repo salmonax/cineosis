@@ -94,11 +94,13 @@ public class InputController
                 if (RightController.ThumbstickAnyX)
                     //_ctx.OffsetProp("_RotationY", -thumb.x, -180, 180);
                     if (RightController.ThumbstickMostlyX)
-                        _ctx.OffsetProp("_TestX", thumb.x*0.1f, 0.5f, 30);
+                        _ctx.AdjustMaskMultiplier(thumb.x);
+                        //_ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                 if (RightController.ThumbstickAnyY)
                     //_ctx.OffsetProp("_RotationX", thumb.y, -180, 180);
                     if (RightController.ThumbstickMostlyY)
-                        _ctx.OffsetProp("_TestY", thumb.y*0.1f, 0.5f, 30);
+                        _ctx.AdjustMaskPower(thumb.y);
+                        //_ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                 break;
 
             case TriggerMode.TransparencyAndExposure: // BOTH TRIGGERS
@@ -132,7 +134,7 @@ public class InputController
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.OffsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.001f, 0, 2);
+                            _ctx.OffsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.003f, 0, 2);
                             break;
                     }
                 }
@@ -188,7 +190,11 @@ public class InputController
                     {
                         case ExtraMode.None:
                             //_ctx.OffsetProp("_ZoomNudgeFactor", thumb.x * 0.1f, 0, 6); // Zoom? I think this is horizontal offset.. Not used anymore?!
-                            _ctx.OffsetProp("_BlurX", thumb.x * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
+                            //_ctx.OffsetProp("_BlurX", thumb.x * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
+                            //_ctx.OffsetProp("_BlurX", thumb.x * 0.075f, 0, 5, Blitter.matteMaskThreshBlurMat);
+
+                            _ctx.OffsetProp("_Strength", thumb.x * 0.01f, 0, 0.4f, Blitter.filmGrainMaterial);
+                            //_ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.OffsetProp("_NudgeFactorX", thumb.x * 0.01f, 0, 1);
@@ -204,7 +210,11 @@ public class InputController
                     {
                         case ExtraMode.None:
                             //_ctx.OffsetProp("_ZoomAdjustNudgeFactor", -thumb.y * 0.05f, 0, 1); // squashes down, so reversed
-                            _ctx.OffsetProp("_BlurY", thumb.y * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
+                            //_ctx.OffsetProp("_BlurY", thumb.y * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
+                            //_ctx.OffsetProp("_BlurY", thumb.y * 0.075f, 0, 5, Blitter.matteMaskThreshBlurMat);
+
+                            _ctx.OffsetProp("_GrainBias", thumb.y * 0.01f, 0, 2, Blitter.compositingMaterial);
+                            //_ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.OffsetProp("_NudgeFactorY", thumb.y * 0.01f, 0, 1);

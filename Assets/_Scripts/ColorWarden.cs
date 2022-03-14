@@ -45,8 +45,6 @@ public class ColorWarden
         // Unity normally seems to handle lrgb conversion on the way
         // to the GPU; since we'll be sending them in HSV, we need to
         // perform the conversion here.
-
-
         return ColorSmith.rgb2hsv(c.linear);
     }
 
@@ -56,12 +54,13 @@ public class ColorWarden
         //return _inclusionsCursor;
     }
 
-    void _Insert(Color color, Color[] samples, int[] samplesFreq, int addedFreq = 1)
+    void _Insert(Color color, Color[] samples, int[] samplesFreq, int removedFreq = 0, bool shouldClampFreq = true, int addedFreq = 1)
     {
         Color hsvColor = ToHSV(color);
         int hueIndex = HueToIndex(hsvColor);
 
-        float clampedFreq = System.Math.Min(samplesFreq[hueIndex], _maxFreqWeight);
+        float clampedFreq = shouldClampFreq ?
+            System.Math.Min(samplesFreq[hueIndex], _maxFreqWeight) : samplesFreq[hueIndex];
 
         float averageHue = (samples[hueIndex].r * clampedFreq + hsvColor.r) / (clampedFreq + 1);
         float averageSat = (samples[hueIndex].g * clampedFreq + hsvColor.g) / (clampedFreq + 1);
@@ -72,15 +71,19 @@ public class ColorWarden
 
         samples[hueIndex] = hsvColor;
 
-        // This is to help with hair and other dark colors, for inclusions only:
-        if (samples == _inclusions)
+        // Might need to get rid of these. It makes reading exclusions AND inclusions
+        // from a Texture2D (as opposed to user input) order-dependent in a way that
+        // probably doesn't make sense.
+
+
+        if (removedFreq > 0)
         {
-            if (hsvColor.b < 0.2) addedFreq *= 2;
-            _exclusionsFreq[hueIndex] = Mathf.Max(_exclusionsFreq[hueIndex] - 1, 0);
-        }
-        else
-        {
-            _inclusionsFreq[hueIndex] = Mathf.Max(_inclusionsFreq[hueIndex] - 1, 0);
+            if (samples == _inclusions)
+                // This is to help with hair and other dark colors, for inclusions only:
+                //if (hsvColor.b < 0.2) addedFreq *= 2;
+                _exclusionsFreq[hueIndex] = Mathf.Max(_exclusionsFreq[hueIndex] - removedFreq, 0);
+            else            
+                _inclusionsFreq[hueIndex] = Mathf.Max(_inclusionsFreq[hueIndex] - removedFreq, 0);
         }
 
         samplesFreq[hueIndex] += addedFreq;
@@ -88,11 +91,11 @@ public class ColorWarden
         //Debug.Log("Hover Color: " + hsvColor);
     }
 
-    public void Include(Color color) =>
-        _Insert(color, _inclusions, _inclusionsFreq);
+    public void Include(Color color, int removedFreq = 0, bool shouldClampFreq = true) =>
+        _Insert(color, _inclusions, _inclusionsFreq, removedFreq, shouldClampFreq);
 
-    public void Exclude(Color color) =>
-        _Insert(color, _exclusions, _exclusionsFreq);
+    public void Exclude(Color color, int removedFreq = 0, bool shouldClampFreq = true) =>
+        _Insert(color, _exclusions, _exclusionsFreq, removedFreq, shouldClampFreq);
 
     public void Reset()
     {
@@ -129,10 +132,10 @@ public class ColorWarden
         );
         //Debug.Log(_outputColors[0] + " " + _outputColors[39]);
         //Debug.Log(_sortedFreqs[_sampleLength - _segmentLength] + " " + _sortedFreqs[_sampleLength - _segmentLength / 2] + " " + _sortedFreqs[_sampleLength - 1]);
-        return _outputColors;
+        return (Color[])_outputColors.Clone();
     }
 
-    public ColorWarden(int segmentLength, int sampleLength = 512, int maxFreqWeight = 10)
+    public ColorWarden(int segmentLength, int maxFreqWeight = 10, int sampleLength = 512)
     {
         _segmentLength = segmentLength;
         _sampleLength = sampleLength;

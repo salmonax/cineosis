@@ -58,12 +58,12 @@ Shader "Unlit/MatteMaskThreshBlit"
 
                 // < 0.06 for lab; 0.16 for lrgb.
 
-                float wat = cie76(tex, matte);
-                float watLab = cie76(rgb2lab(tex), rgb2lab(matte));
+                float rgbDist = cie76(tex, matte);
+                float labDist = cie76(rgb2lab(tex), rgb2lab(matte));
                 //float watHSV = cie76(RGBtoHSV(tex), RGBtoHSV(matte));
 
                 float4 output = float4(1,1,1,1);
-                if (wat < _RgbThresh && watLab < _LabThresh)
+                if (rgbDist < _RgbThresh && labDist < _LabThresh)
                     output = float4(0,0,0,1);
                 return output;
                 // && watHSV < _TestX)

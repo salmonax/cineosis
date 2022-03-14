@@ -13,6 +13,19 @@ public static class Blitter
     public static readonly Material diffMaskBlurMat = Resources.Load<Material>("BoxKawaseBlitMaterial"); // currently, this does Gaussian despite name
     public static readonly RenderTexture diffMaskCrispAlpha = Tex(720, 360); // as current, no FilterMode declared
     public static readonly RenderTexture diffMaskBlurredAlpha = Tex(288, 144); // as current, questionably
+
+    // This is the magical cie76 decay threshold, to replace screenThresh:
+    public static readonly Material dynThreshBlitMat = Resources.Load<Material>("DynThreshBlitMaterial");
+    public static readonly RenderTexture dynThreshCrispAlpha = Tex(128, 128, FilterMode.Point); // full texture, for color sampling
+    public static readonly RenderTexture dynThreshInternalBlur = Tex(128, 128);
+    public static readonly RenderTexture dynThreshCrispAlphaWithColorBias = Tex(512, 512, FilterMode.Point); // black-and-white, just alpha value
+    public static readonly Texture2D dynThreshColorSource = new Texture2D(512, 512, TextureFormat.RGBA32, false);
+    public static readonly ColorWarden dynThreshWarden = new ColorWarden(40, 512); // Arbitrarily clamp moving average to sqrt of pixel count.
+    public static readonly Material dynThreshInternalBlurMat = Resources.Load<Material>("DynThreshInternalBlurMaterial"); // small recursive blur
+    public static readonly Material dynThreshBlurMat = Resources.Load<Material>("DynThreshBlurMaterial");
+    public static readonly RenderTexture dynThreshBlurred = Tex(512, 512);
+
+
     // A static difference mask might use the following material, with a more expensive blur:
     //public static readonly Material blurMat = Resources.Load<Material>("NaiveGaussianMaterial"); 
 
@@ -41,8 +54,12 @@ public static class Blitter
         ApplyKernel(diffMaskBlurMat, 2, 6);
         ApplyKernel(colorMaskBlurMat, 3, 12); // not really sure why this one is higher
         ApplyKernel(matteMaskThreshBlurMat, 2, 8);
-        ApplyKernel(matteMaskAlphaBlurMat, 2, 10);
+        ApplyKernel(matteMaskAlphaBlurMat, 2, 6); // was 2, 10 for a minute
         ApplyKernel(outlinerHandBlurMat, 2, 8);
+        ApplyKernel(dynThreshBlurMat, 2, 8);
+        ApplyKernel(dynThreshInternalBlurMat, 2, 8);
+        //ClipManager.MakeSwatches(10, 4);
+        //ClipManager.MakeExclusionSwatches(10, 4);
     }
 
     public static void ApplyKernel(Material mat, int sigma, int size)
@@ -59,6 +76,64 @@ public static class Blitter
         material.SetTexture("_LastTex2", dsts[1]);
         material.SetTexture("_LastTex3", dsts[2]);
     }
+
+    public static void ApplyDynThresh(
+        Material mat, Texture tex,
+        string dstSlot = "_DynThreshTex",
+        string lastSlot = "_LastTex", string mainSlot = "_MainTex", string threshSlot = "_ThreshTex",
+        string innerThreshSlot = "_InnerThreshTex"
+    )
+    {
+        var exitingTex = dynThreshBlitMat.GetTexture(mainSlot);
+        dynThreshBlitMat.SetTexture(lastSlot, exitingTex);
+        dynThreshBlitMat.SetTexture(mainSlot, tex);
+        dynThreshBlitMat.SetTexture(threshSlot, dynThreshCrispAlpha);
+
+        // Hmm... could run this blit ONCE without color info... setting it to ignore it
+        dynThreshBlitMat.SetFloat("_UseColorBias", 0);
+        Clear(null, dynThreshCrispAlpha, dynThreshBlitMat, Color.black, false);
+
+        
+        RenderTexture.active = dynThreshCrispAlpha;
+        dynThreshColorSource.ReadPixels(new Rect(0, 0, dynThreshCrispAlpha.width, dynThreshCrispAlpha.height), 0, 0);
+        RenderTexture.active = null;
+        var byteArray = dynThreshColorSource.GetRawTextureData();
+        for (var i = 0; i < byteArray.Length; i += 4)
+        {
+            var color = new Color32(byteArray[i], byteArray[i + 1], byteArray[i + 2], byteArray[i + 3]);
+            if (color.a == 0)
+                dynThreshWarden.Exclude(color);
+            if (color.a / 255 > 0.8)
+                dynThreshWarden.Include(color, int.MaxValue); // zero-out the corresponding exclusion
+        }
+
+        //var hsv = dynThreshWarden.Inclusions[19];
+        //GameObject.Find("ColorSwatchLeft").GetComponent<Renderer>().material.color = Color.HSVToRGB(hsv.r, hsv.g, hsv.b);
+
+        var inclusions = dynThreshWarden.Inclusions;
+        var exclusions = dynThreshWarden.Exclusions;
+        //ClipManager.SetSwatches(inclusions);
+        //ClipManager.SetExclusionSwatches(exclusions);
+
+        //Run it again WITH color info after GetRawTextureData call and colorwarden filter..
+        dynThreshBlitMat.SetFloat("_UseColorBias", 1);
+        dynThreshBlitMat.SetTexture(threshSlot, dynThreshCrispAlphaWithColorBias);
+        dynThreshBlitMat.SetColorArray("_ColorInclusionArray", inclusions);
+        dynThreshBlitMat.SetColorArray("_ColorExclusionArray", exclusions);
+        dynThreshBlitMat.SetFloat("_ColorArrayLength", inclusions.Length);
+        Clear(null, dynThreshCrispAlphaWithColorBias, dynThreshBlitMat, Color.black, false);
+
+        Clear(dynThreshCrispAlphaWithColorBias, dynThreshInternalBlur, dynThreshInternalBlurMat);
+        dynThreshBlitMat.SetTexture(innerThreshSlot, dynThreshInternalBlur);
+
+        //mat.SetTexture(dstSlot, dynThreshInternalBlur);
+
+        //mat.SetTexture(dstSlot, dynThreshCrispAlphaWithColorBias);
+
+        Clear(dynThreshCrispAlphaWithColorBias, dynThreshBlurred, dynThreshBlurMat);
+        mat.SetTexture(dstSlot, dynThreshBlurred);
+    }
+
 
     public static void ApplyDifferenceMask(Material mat, RenderTexture[] dsts, string slot = "_DynAlphaTex")
     {
@@ -186,7 +261,8 @@ public static class Blitter
     /* Outliner (No methods yet, but moving materials over) */
 
     public static readonly Material outlinerHandBlurMat = Resources.Load<Material>("OutlinerHandBlurMaterial");
-
+    public static readonly Material filmGrainMaterial = Resources.Load<Material>("FilmGrainMaterial");
+    public static readonly Material compositingMaterial = Resources.Load<Material>("CompositingMaterial");
 
     // Not sure why I need to manually clear each blit, but it was the early blitting style, so leaving it for now:
     public static void Clear(Texture source, RenderTexture target, Material mat = null, Color? color = null, bool clear = true)

@@ -14,6 +14,8 @@ Shader "Custom/ShadowCompositing"
 
         _RightHandZ ("Right Hand Z", Range (0, 0.4))  = 0
         _BlurScale ("Blur Scale", Range(1, 10)) = 0
+
+        _GrainBias("Grain Bias (0.6)", Range(0, 2)) = 0
     }
     SubShader
     {
@@ -29,6 +31,8 @@ Shader "Custom/ShadowCompositing"
             sampler2D _MaskTex; // original mask
             sampler2D _SceneTex;
             sampler2D _GrainTex;
+
+            float _GrainBias;
 
             float _RightHandDeltaX;
             float _RightHandDeltaY;
@@ -73,7 +77,7 @@ Shader "Custom/ShadowCompositing"
                 if (maskTex.r > 0) {
                     // For passthrough cutout:
                     //sceneTex.a = max((1-maskTex.r*1.75)*sceneTex.a, 0);
-                    //sceneTex.rgb *= max((1-maskTex.r*1.75), 0.5);
+                    //sceneTex.rgb *= max((1-maskTex.r*1.75), 0);
 
                     // For outlined shadow-hand (ugly)
                     if (maskTex.r > 0.25 && maskTex.r < 0.5)
@@ -102,7 +106,8 @@ Shader "Custom/ShadowCompositing"
                 // fix? maybe unnecessary
                 //color.r = max(tex2D(_SceneTex, i.uvs.xy).r-intensityRadius, 0);
 
-                return float4(color.rgb - tex2D(_GrainTex, i.uvs)*pow(color.rgb*7,0.7), color.a);
+                /* Note: higher power multiplier biases towards higher grain at higher exposures: */
+                return float4(color.rgb - tex2D(_GrainTex, i.uvs)*pow(color.rgb*7,_GrainBias), color.a);
             }
             ENDCG
 

@@ -5,6 +5,8 @@ Properties {
     _TestY ("TestY", Range(0, 50)) = 0
     _TestZ ("TestZ", Range(0, 5)) = 0
     _TestW ("TestW", Range(0, 5)) = 0
+    _MatteAlphaMultiplier ("MatteAlphaMultiplier", Range(0, 5)) = 1
+    _MatteAlphaPower ("MatteAlphaPower", Range(0, 50)) = 1
     [MaterialToggle] _UseSwatchPickerMode("Use Swatch Picker Mode", Float) = 0
     //_LeftColorExclusionArray("Left Color Exclusion Array", Color) = (0,0,0)
     //_RightColorExclusionArray("Right Color Exclusion Array", Color) = (0,0,0)
@@ -45,6 +47,7 @@ Properties {
     [NoScaleOffset] _DynAlphaTex ("Combined Spherical Texture (HDR)", 2D) = "grey" {}
     [NoScaleOffset] _ExclusionDrawMaskTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
     [NoScaleOffset] _LightingTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
+    [NoScaleOffset] _DynThreshTex ("Dynamic Thresh Spherical Texture", 2D) = "white" {}
     [NoScaleOffset] _TestTex ("Combined Spherical Texture (HDR)", 2D) = "white" {}
 
     [NoScaleOffset]  SmallFrameTex ("Small Frame Tex Spherical Texture (HDR)", 2D) = "grey" {}
@@ -82,6 +85,8 @@ SubShader {
         float _TestY;
         float _TestZ;
         float _TestW;
+        float _MatteAlphaMultiplier;
+        float _MatteAlphaPower;
         float2 _LaserCoord;
         float _AutoShiftRotationXNudgeFactor; // multiplied against ShiftY; should be 0 if autoshift is off
         float3 _ColorTestArray[1];
@@ -102,8 +107,9 @@ SubShader {
         sampler2D _ScreenSpaceHelperTex;
         sampler2D _ExclusionDrawMaskTex;
         sampler2D _LightingTex;
-        sampler2D _TestTex;
         sampler2D _MatteMaskAlphaTex;
+        sampler2D _DynThreshTex;
+        sampler2D _TestTex;
         float4 _Tex_TexelSize;
         float4 _LastTex_TexelSize;
         float4 _AlphaTex_TexelSize;
@@ -516,6 +522,14 @@ SubShader {
 
            
             if (_UseDifferenceMask == 1) {
+                float4 dynThresh = tex2D(_DynThreshTex, tc);
+                //tex.a = pow(dynThresh*3, 2);
+                tex.a = pow(dynThresh.a*_TestX,_TestY)*maxAlpha;
+                //tex.a = pow(tex2D(_DynThreshTex, tc)*1.5, 2);
+                //return tex;
+            }
+
+            if (_UseDifferenceMask == 11) {
                 float d1 = cie94(texLab, lastLab);
                 float d2 = cie94(texLab, lastLab2);
                 float d3 = cie94(texLab, lastLab3);
@@ -599,7 +613,7 @@ SubShader {
             }
 
             if (_UseDifferenceMask == 3) {
-                tex.a = pow(tex2D(_MatteMaskAlphaTex, tc)*_TestX, _TestY)*maxAlpha;
+                tex.a = pow(tex2D(_MatteMaskAlphaTex, tc)*_MatteAlphaMultiplier, _MatteAlphaPower)*maxAlpha;
 
                 //tex.a = tex2D(_MatteMaskAlphaTex, tc) * maxAlpha;
                 //tex.a = 0;

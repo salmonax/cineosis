@@ -110,6 +110,8 @@ Material:
     - _TestY: 1
     - _TestZ: 0
     - _UVSec: 0
+    - _WeightMultiplier: 3.03
+    - _WeightPower: 3.61
     - _ZWrite: 1
     - _kernelWidth: 12
     m_Colors:

@@ -25,8 +25,7 @@ public class Outliner : MonoBehaviour
     void Start()
     {
         _outlineMaterial = Resources.Load<Material>("OutlinerMaterial");
-        _compositingMaterial = Resources.Load<Material>("CompositingMaterial");
-        _filmGrainMaterial = Resources.Load<Material>("FilmGrainMaterial");
+
         // for outlined objects
         _tempCam = new GameObject().AddComponent<Camera>();
         _tempCam.enabled = false;
@@ -39,7 +38,7 @@ public class Outliner : MonoBehaviour
         _outlineMaterial.SetInt("_kernelWidth", kernel.Length);
 
         rightHand = GameObject.Find("RightControllerAnchor");
-        rightHandRenderer = GameObject.Find("OVRHandPrefab").GetComponent<SkinnedMeshRenderer>();
+        rightHandRenderer = GameObject.Find("OVRHandPrefab_R").GetComponent<SkinnedMeshRenderer>();
         //debugSphereRenderer = GameObject.Find("Sphere").GetComponent<MeshRenderer>();
 
         rightHandRenderer.forceRenderingOff = true;
@@ -220,6 +219,7 @@ public class Outliner : MonoBehaviour
         var handDeltaX = curScreen.x - lastScreenRelativeHandPos.x;
         var handDeltaY = curScreen.y - lastScreenRelativeHandPos.y;
 
+        var _compositingMaterial = Blitter.compositingMaterial;
         // Turned frame skipping off, so always passing 0 delta.
         //if (frameSkip > 0)
         //{
@@ -235,7 +235,8 @@ public class Outliner : MonoBehaviour
         } else
             drHandOffsetX = drHandOffsetY = 0;
 
-        Blitter.Clear(src, grainRt, _filmGrainMaterial);
+
+        Blitter.Clear(src, grainRt, Blitter.filmGrainMaterial);
         //_compositingMaterial.SetFloat("_HandOffsetX", handOffsetX);
         //_compositingMaterial.SetFloat("_HandOffsetY", handOffsetY);
         _compositingMaterial.SetFloat("_HandOffsetX", drHandOffsetX + handOffsetX);
