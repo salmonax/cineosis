@@ -43,7 +43,7 @@ public partial class ClipManager
         if (_isDifferenceMaskEnabled == 3)
             OffsetProp("_MatteAlphaMultiplier", amount*0.1f, 1.0f, 30);
         else if (_isDifferenceMaskEnabled == 1)
-            OffsetProp("_TestX", amount * 0.1f, 1.0f, 30);
+            OffsetProp("_DynThreshMultiplier", amount * 0.1f, 1.0f, 30);
 
     }
     public void AdjustMaskPower(float amount)
@@ -51,7 +51,7 @@ public partial class ClipManager
         if (_isDifferenceMaskEnabled == 3)
             OffsetProp("_MatteAlphaPower", amount * 0.1f, 1.0f, 30);
         else if (_isDifferenceMaskEnabled == 1)
-            OffsetProp("_TestY", amount * 0.1f, 1.0f, 30);
+            OffsetProp("_DynThreshPower", amount * 0.1f, 1.0f, 30);
     }
 
     // Re-save configs if a user-update has caused needsUpdate to be true

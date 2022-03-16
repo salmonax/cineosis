@@ -129,6 +129,8 @@ Material:
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
+    - _DynThreshMultiplier: 1
+    - _DynThreshPower: 1
     - _ExcludeColorRadius: 0.291
     - _ExcludeColorRadius2: 1
     - _Exposure: 0.6

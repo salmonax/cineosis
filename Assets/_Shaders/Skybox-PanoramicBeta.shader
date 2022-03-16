@@ -7,6 +7,8 @@ Properties {
     _TestW ("TestW", Range(0, 5)) = 0
     _MatteAlphaMultiplier ("MatteAlphaMultiplier", Range(0, 5)) = 1
     _MatteAlphaPower ("MatteAlphaPower", Range(0, 50)) = 1
+    _DynThreshMultiplier ("DynThreshMultiplier", Range(0, 5)) = 1
+    _DynThreshPower ("DynThreshPower", Range(0, 50)) = 1
     [MaterialToggle] _UseSwatchPickerMode("Use Swatch Picker Mode", Float) = 0
     //_LeftColorExclusionArray("Left Color Exclusion Array", Color) = (0,0,0)
     //_RightColorExclusionArray("Right Color Exclusion Array", Color) = (0,0,0)
@@ -87,6 +89,8 @@ SubShader {
         float _TestW;
         float _MatteAlphaMultiplier;
         float _MatteAlphaPower;
+        float _DynThreshMultiplier;
+        float _DynThreshPower;
         float2 _LaserCoord;
         float _AutoShiftRotationXNudgeFactor; // multiplied against ShiftY; should be 0 if autoshift is off
         float3 _ColorTestArray[1];
@@ -524,7 +528,7 @@ SubShader {
             if (_UseDifferenceMask == 1) {
                 float4 dynThresh = tex2D(_DynThreshTex, tc);
                 //tex.a = pow(dynThresh*3, 2);
-                tex.a = pow(dynThresh.a*_TestX,_TestY)*maxAlpha;
+                tex.a = pow(dynThresh.a*_DynThreshMultiplier,_DynThreshPower)*maxAlpha;
                 //tex.a = pow(tex2D(_DynThreshTex, tc)*1.5, 2);
                 //return tex;
             }

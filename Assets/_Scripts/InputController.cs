@@ -10,7 +10,8 @@ public enum ExtraMode
     ResizeFactorAndResize, // 3
     SwatchPicker, // 4
     ZoomShiftXY, //5
-    PlaybackThrottle,
+    PlaybackSeekForward, // 6; thumbstick adjusts matte border, weirdly
+    PlaybackSeekBackward, // 7; thumbstick adjusts matte border, also weirdly
 }
 
 // Not using yet, but probably will; useful to document
@@ -108,7 +109,6 @@ public class InputController
                 if (RightController.ButtonTwo) ToggleMode(ExtraMode.ZoomAndHorizontalOffset);
                 if (RightController.ButtonOne) ToggleMode(ExtraMode.ResizeFactorAndResize);
 
-
                 // ExtraMode-specific buttons
                 // Note: button behavior has the switch on the outside
                 // (Thumbstick behavior is the other way around)
@@ -169,19 +169,22 @@ public class InputController
                 break;
 
             case TriggerMode.ZoomCompAndZoomAdjustComp: // INDEX TRIGGER
-                if (RightController.ThumbstickButton) ToggleMode(ExtraMode.PlaybackThrottle);
 
                 // Extra-mode specific
                 switch (extraMode)
                 {
                     case ExtraMode.None:
                     case ExtraMode.ZoomShiftXY:
+                        if (RightController.ThumbstickButton) ToggleMode(ExtraMode.PlaybackSeekForward);
                         if (RightController.ButtonTwo) ToggleMode(ExtraMode.NudgeXY);
                         if (RightController.ButtonOne) ToggleMode(ExtraMode.ZoomShiftXY);
                         break;
-                    case ExtraMode.PlaybackThrottle:
-                        if (RightController.ButtonTwo) _ctx.SeekAhead(180);
-                        if (RightController.ButtonOne) _ctx.SeekAhead(60);
+                    case ExtraMode.PlaybackSeekForward:
+                    case ExtraMode.PlaybackSeekBackward:
+                        var seekSign = extraMode == ExtraMode.PlaybackSeekForward ? 1 : -1;
+                        if (RightController.ThumbstickButton) ToggleMode(ExtraMode.PlaybackSeekBackward);
+                        if (RightController.ButtonTwo) _ctx.SeekAhead(seekSign*180);
+                        if (RightController.ButtonOne) _ctx.SeekAhead(seekSign*60);
                         break;
                 }
                 
@@ -194,13 +197,16 @@ public class InputController
                             //_ctx.OffsetProp("_BlurX", thumb.x * 0.075f, 0, 5, Blitter.matteMaskThreshBlurMat);
 
                             _ctx.OffsetProp("_Strength", thumb.x * 0.01f, 0, 0.4f, Blitter.filmGrainMaterial);
-                            //_ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.OffsetProp("_NudgeFactorX", thumb.x * 0.01f, 0, 1);
                             break;
                         case ExtraMode.ZoomShiftXY:
                             _ctx.OffsetProp("_ZoomShiftX", thumb.x * 0.02f, -1, 1);
+                            break;
+                        case ExtraMode.PlaybackSeekForward:
+                        case ExtraMode.PlaybackSeekBackward:
+                            _ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                             break;
                     }
 
@@ -214,7 +220,6 @@ public class InputController
                             //_ctx.OffsetProp("_BlurY", thumb.y * 0.075f, 0, 5, Blitter.matteMaskThreshBlurMat);
 
                             _ctx.OffsetProp("_GrainBias", thumb.y * 0.01f, 0, 2, Blitter.compositingMaterial);
-                            //_ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                             break;
                         case ExtraMode.NudgeXY:
                             _ctx.OffsetProp("_NudgeFactorY", thumb.y * 0.01f, 0, 1);
@@ -228,6 +233,10 @@ public class InputController
                                 _ctx.OffsetProp("_RotationShiftX", -thumb.y, -180, 180);
                             else
                                 _ctx.OffsetProp("_ZoomShiftY", thumb.y * 0.02f, -1, 1);
+                            break;
+                        case ExtraMode.PlaybackSeekForward:
+                        case ExtraMode.PlaybackSeekBackward:
+                            _ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                             break;
                     }
                 break;
