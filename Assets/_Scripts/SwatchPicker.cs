@@ -124,7 +124,8 @@ public class SwatchPicker : MonoBehaviour
 
         line.enabled = true;
 
-        clipManager.sizingBar.SetActive(false);
+        if (clipManager.sizingBar != null)
+            clipManager.sizingBar.SetActive(false);
         //clipManager.debugContainer.SetActive(false);
 
         swatchContainer.SetActive(true);
@@ -372,8 +373,10 @@ public class SwatchPicker : MonoBehaviour
                 // only when the video is playing; it's used here to keep the colormask updated
                 // even when the video is paused.)
                 // Only do this once per two-eye render cycle; left eye is fine:
+
+                // ARGH, this knows too much.
                 if (clipManager.clipPool.current.isPaused)
-                    clipManager.RenderColorMaskTick(clipManager.lastSource);
+                    clipManager.RenderColorMaskTick();
 
             } else
             {
@@ -409,11 +412,17 @@ public class SwatchPicker : MonoBehaviour
                 // Just render screenSpaceIndex on the right, since we can't do anything else:
                 swatchMaterialRight.color = screenSpaceIndexColor;
 
-                Blitter.RenderLightingTick(
-                    new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g),
-                    new Vector2(0,0),
-                    skyboxMat
-                );
+                if (_useLightMode == 1)
+                    Blitter.RenderLightingTick(
+                        new Vector2(screenSpaceIndexColorLeft.r, screenSpaceIndexColorLeft.g),
+                        new Vector2(0, 0),
+                        skyboxMat
+                    );
+                if (_mode > SwatchPickerMode.MaskPaused)
+                    RenderExclusionMaskTick(
+                        new Vector2(screenSpaceIndexColorRight.r, screenSpaceIndexColorRight.g),
+                        skyboxMat // renders when a material is passed in; only do this once per two-eye render cycle
+                    );
             }
         }
     }

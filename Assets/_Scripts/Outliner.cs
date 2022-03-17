@@ -185,8 +185,8 @@ public class Outliner : MonoBehaviour
         // NOTE: mask should stay constantly updated!
         // Only the GRAB PASS BLUR is subject to delays!
 
-        // For passthrough cutout mode:
-        Blitter.Clear(rawOutlineRt, featheredOutlineRt, Blitter.outlinerHandBlurMat);
+        // For passthrough cutout OR outline mode:
+        //Blitter.Clear(rawOutlineRt, featheredOutlineRt, Blitter.outlinerHandBlurMat);
 
         if (curFrame <= 0) // in case individual eye not triggered
         {
@@ -243,8 +243,8 @@ public class Outliner : MonoBehaviour
         _compositingMaterial.SetFloat("_HandOffsetY", drHandOffsetY + handOffsetY);
         _compositingMaterial.SetTexture("_GrainTex", grainRt);
         _compositingMaterial.SetTexture("_SceneTex", src);
-        _compositingMaterial.SetTexture("_MaskTex", featheredOutlineRt);
-        //_compositingMaterial.SetTexture("_MaskTex", rawOutlineRt);
+        //_compositingMaterial.SetTexture("_MaskTex", featheredOutlineRt);
+        _compositingMaterial.SetTexture("_MaskTex", rawOutlineRt);
 
         //_outlineMaterial.SetTexture("_SceneTex", src);
 

@@ -134,6 +134,7 @@ Material:
     - _ExcludeColorRadius: 0.291
     - _ExcludeColorRadius2: 1
     - _Exposure: 0.6
+    - _FlipVertical: 0
     - _Float: 1
     - _GlossMapScale: 1
     - _Glossiness: 0.5
@@ -174,11 +175,12 @@ Material:
     - _TestY: 1
     - _TestZ: 0.6
     - _TetX: 2
-    - _Transparency: 1
+    - _Transparency: 1.5
     - _UVSec: 0
     - _UseDiffMask: 0
     - _UseDifferenceMask: 1
     - _UseSwatchPickerMode: 0
+    - _VerticalFlip: 0
     - _ZWrite: 1
     - _Zoom: 0.44
     - _ZoomAdjust: 0

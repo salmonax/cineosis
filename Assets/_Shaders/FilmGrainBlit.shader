@@ -99,7 +99,7 @@ Shader "UltraEffects/Cinematic"
 
             fixed4 frag (v2f i) : SV_Target
             {
-				// Calculate Perlin noise.
+				/* Calculate Perlin noise. */
 				float4 col = tex2D(_MainTex, i.uv);
 				float2 pos = i.uv * _ScreenParams.xy/2;
 				float n = perlin2D(pos);

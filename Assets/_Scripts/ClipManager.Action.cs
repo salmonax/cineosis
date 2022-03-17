@@ -18,30 +18,34 @@ public partial class ClipManager
     public void OffsetProp(string prop, float offset, float min, float max, Material targetMat = null)
     {
         if (!targetMat) targetMat = skyboxMat;
-        float currentValue = targetMat.GetFloat(prop);
-        float newValue = Mathf.Clamp(currentValue + offset, min, max);
-        targetMat.SetFloat(prop, newValue);
-        if (targetMat == skyboxMat)
-            clipConfigs[clipPool.index].SetFloatIfPresent(prop, newValue);
+        SetProp(prop, targetMat.GetFloat(prop) + offset, min, max, targetMat);
+    }
+    public void ToggleProp(string prop, Material targetMat = null)
+    {
+        if (!targetMat) targetMat = skyboxMat;
+        SetProp(prop, targetMat.GetFloat(prop) == 0 ? 1 : 0, 0, 1, targetMat);
     }
 
     public void EnableDebugGUI()
     {
-        sizingBar.SetActive(true);
-        debugContainer.SetActive(true);
+        //sizingBar.SetActive(true);
+        //debugContainer.SetActive(true);
+        debugGuiCanvas.SetActive(true);
     }
 
     public void DisableDebugGUI(bool forceSwatchPickerOff = false)
     {
-        sizingBar.SetActive(false);
-        debugContainer.SetActive(false);
         if (forceSwatchPickerOff) swatchDetector.Disable();
+        if (_inputController.metaMode == MetaMode.Debug) return;
+        debugGuiCanvas.SetActive(false);
+        //sizingBar.SetActive(false);
+        //debugContainer.SetActive(false);
     }
 
     public void AdjustMaskMultiplier(float amount)
     {
         if (_isDifferenceMaskEnabled == 3)
-            OffsetProp("_MatteAlphaMultiplier", amount*0.1f, 1.0f, 30);
+            OffsetProp("_MatteAlphaMultiplier", amount * 0.1f, 1.0f, 30);
         else if (_isDifferenceMaskEnabled == 1)
             OffsetProp("_DynThreshMultiplier", amount * 0.1f, 1.0f, 30);
 
@@ -65,28 +69,9 @@ public partial class ClipManager
         }
     }
 
-    public void PlayNextClip()
-    {
-        var exitingClip = clipPool.current;
-        exitingClip.Pause();
-        clipPool.Next((VideoPlayer enteringClip, int newIndex) =>
-        {
-            // This callback runs after entering video is prepared.
-            // (small detail: clipPool also prepares the next two videos FIRST)
-            enteringClip.targetTexture = skyboxTex;
-            exitingClip.targetTexture = null;
-            skyboxMat.SetInt("_VideoIndex", newIndex);
-            SetLayoutFromResolution(enteringClip);
-
-            _undoConfig = null;
-            clipConfigs[newIndex].ApplyToMaterial(skyboxMat);
-
-            Blitter.SetCurrentMatte(clipPool.currentMatte); // ignores if null
-            PullAndSetMaskState();
-            _resetFrameCapture(false); // don't check current mode
-            enteringClip.Play();
-        });
-    }
+    public void PlayNextClip() => PlayClipAtIndexOffset(1);
+    public void PlayPrevClip() => PlayClipAtIndexOffset(-1);
+    
 
     public void TogglePlaying()
     {
@@ -107,34 +92,37 @@ public partial class ClipManager
     {
         // TODO: Integrate this into persistence!
         // Something like:
-        ClipConfig freshConfig;
+        ClipConfig freshOrUndoConfig;
         if (_undoConfig == null)
         {
             _undoConfig = clipConfigs[clipPool.index];
-            freshConfig = new ClipConfig();
+            freshOrUndoConfig = new ClipConfig();
             // Argh, leave this the same:
-            freshConfig._RotationX = _undoConfig._RotationX;
-            freshConfig._RotationY = _undoConfig._RotationY;
+            freshOrUndoConfig._RotationX = _undoConfig._RotationX;
+            freshOrUndoConfig._RotationY = _undoConfig._RotationY;
         }
         else
         {
-            freshConfig = _undoConfig;
+            freshOrUndoConfig = _undoConfig;
             _undoConfig = null;
         }
         // save the new config when all buttons are released:
-        clipConfigs[clipPool.index] = freshConfig;
+        clipConfigs[clipPool.index] = freshOrUndoConfig;
+        ClipConfig.GlobalizeDynThresh(clipConfigs, clipPool.index);
         ClipConfig.Save(clipConfigs); // do it manually.
         clipConfigs[clipPool.index].ApplyToMaterial(skyboxMat);
+        clipConfigs[clipPool.index].ApplyToMaterial(Blitter.dynThreshBlitMat, true); // useDynThreshFields = true
 
         combinedZoomFactor = -3.6f;
     }
 
     public void CycleMaskModes()
     {
-        if (_isDifferenceMaskEnabled == _differenceMaskCount) // cycling!
-            DisableMask();
-        else
-            EnableMask();
+        maskManager.CycleMaskModes();
+        //if (_isDifferenceMaskEnabled == _differenceMaskCount) // cycling!
+        //    DisableMask();
+        //else
+        //    EnableMask();
     }
 
     // This performs poorly and isn't used; maybe delete

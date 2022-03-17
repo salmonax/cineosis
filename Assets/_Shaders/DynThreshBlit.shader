@@ -8,21 +8,27 @@ Shader "Unlit/DynThreshBlit"
         _LastTex3 ("LastTex3", 2D) = "grey" {}
         _InnerThreshTex ("Inner Thresh", 2D) = "black" {} /* highly blurred mini-thresh, to help with holes */
         _ThreshTex ("Running Thresh (_ThreshTex)", 2D) = "black" {}
+
         _SampleDecay ("SampleDecay", Range(0, 2)) = 0
         _OutputDecay ("OutputDecay", Range(0, 2)) = 0
-        _DistMultiplier ("DistMultiplier", Range(0, 25)) = 1
-        _DistPower ("DistPower", Range(0, 5)) = 1
 
-        _ColorDistMultThresh ("ColorDistMultThresh", Range(0, 0.1)) = 0
-        _ColorDistMultStrength ("ColorDistMultStrength", Range(0, 30)) = 0
-        _ColorDistMultMax ("ColorDistMultMax", Range(0, 40)) = 0
+        _ColorDistMultThresh ("ColorDistMultThresh", Range(0, 1)) = 0 /* used to clamp at 0.2 */
+        _ColorDistMultStrength ("ColorDistMultStrength", Range(0, 40)) = 0 /* used to clmap at 30 */
+        _ColorDistMultMax ("ColorDistMultMax", Range(0, 60)) = 0 /* used to clmap at 40 */
 
         _DecayDampThresh ("DecayDampThresh", Range(0, 0.2)) = 0
         _DecayDampStrength ("DecayDampStrength", Range(0, 20)) = 0
 
+        _DistMultiplier ("DistMultiplier", Range(0, 20)) = 1
+        _DistPower ("DistPower", Range(0, 20)) = 1
+
+        _InnerThreshMultiplier ("InnerThreshMultiplier", Range(0, 20)) = 1
+        _InnerThreshPower ("InnerThreshPower", Range(0, 20)) = 1
+
         [MaterialToggle] _UseHueValueInclude("Use Hue-Value (Include)", Float) = 0
         [MaterialToggle] _UseHueValueExclude("Use Hue-Value (Exclude)", Float) = 0
         _UseColorBias("UseColorBias", float) = 0
+        _UseInnerThresh("UseInnerThresh", float) = 0
 
         _TestZ ("TestZ", Range(0, 5)) = 0
         _TestW ("TestW", Range(0, 5)) = 0
@@ -75,8 +81,12 @@ Shader "Unlit/DynThreshBlit"
             float3 _ColorInclusionArray[40];
             float3 _ColorExclusionArray[40];
             bool _UseColorBias = 0;
+            bool _UseInnerThresh = 0;
             bool _UseHueValueInclude;
             bool _UseHueValueExclude;
+            float _InnerThreshMultiplier;
+            float _InnerThreshPower;
+
             float _TestZ;
             float _TestW;
             
@@ -137,7 +147,16 @@ Shader "Unlit/DynThreshBlit"
 
                 float screenThresh = getScreenThresh(2, i.uv);
 
-                float innerThresh = pow(tex2D(_InnerThreshTex, i.uv).r*_TestZ, _TestW);
+                float innerThresh;
+                float innerThreshMax;
+
+                //if (_UseInnerThresh == 1) {
+                    innerThresh = pow(tex2D(_InnerThreshTex, i.uv).r*_InnerThreshMultiplier, _InnerThreshPower);
+                    innerThreshMax = pow(_InnerThreshMultiplier, _InnerThreshPower);
+                //} else {
+                //    innerThreshMax = 2; /* damping subtracts thresh from this, so will always use 1 */
+                //    innerThresh = 1;
+                //}
 
                 float d1 = cie76(texLab, lastLab);
                 float d2 = cie76(texLab, lastLab2);
@@ -147,6 +166,10 @@ Shader "Unlit/DynThreshBlit"
                 float d6 = cie76(lastLab, lastLab3);
 
                 float cieDistSum = (d1+d2+d3+d4+d5+d6);
+
+                /// WARNING: bunk darkness biasing term!
+                if (texHSV.b < 0.05)
+                    cieDistSum *= 1 + (1-pow(texHSV.b/0.05,0.1))*99;
 
                 float colorDecayDamping = 1;
                 float colorDistMultiplier = 0;
@@ -170,8 +193,7 @@ Shader "Unlit/DynThreshBlit"
                                 abs(excludeColor.r - texHSV.r);
 
                             colorDistMultiplier = min(colorDistMultiplier + (1 - min(hsvIncludeDist/_ColorDistMultThresh, 1))*_ColorDistMultStrength*innerThresh, _ColorDistMultMax);
-                            colorDecayDamping += (1 - min(hsvExcludeDist/_DecayDampThresh, 1))*_DecayDampStrength*max(_TestZ-innerThresh, 0);
-
+                            colorDecayDamping += (1 - min(hsvExcludeDist/_DecayDampThresh, 1))*_DecayDampStrength*(innerThreshMax-innerThresh);
                         }
                     }
                     return runningThresh.r + pow(cieDistSum*(_DistMultiplier+colorDistMultiplier*innerThresh), _DistPower) - max(decay*colorDecayDamping, 0);

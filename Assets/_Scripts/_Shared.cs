@@ -55,6 +55,123 @@ public enum ThumbstickMode
     Centered
 }
 
+/*
+public class DelayedButton
+{
+    OVRInput.Button _button;
+    float _lastPress = float.MinValue;
+    float _beforeLastPress = float.MinValue;
+    bool _triggeredSingle = false;
+    bool _triggeredDouble = false;
+
+    public DelayedButton(OVRInput.Button button) => _button = button;
+
+    public bool SingleClicked(float beginWindow = 0.4f, float endWindow = 0.5f)
+    {
+        if (_triggeredSingle) return false;
+        bool inWindow = !OVRInput.Get(_button) && Time.time - _lastPress >= beginWindow && Time.time - _lastPress < endWindow;
+        if (inWindow) _triggeredSingle = true;
+        return inWindow;
+    }
+    public bool DoubleClicked(float beginWindow = 0, float endWindow = 0.4f)
+    {
+        if (_triggeredDouble) return false;
+        bool inWindow = !OVRInput.Get(_button) && Time.time - _beforeLastPress >= beginWindow && Time.time - _beforeLastPress < endWindow;
+        if (inWindow) _triggeredSingle =_triggeredDouble = true;
+        return inWindow;
+    }
+
+    // The below method will return a bool, but encapsulates a Reset() to effectively wipe out
+    // the queue, thereby preventing stale/double firing.
+    //
+    // WARNING: this requires the caller (eg. InputController) to be somewhat careful with its conditionals.
+    // For example, if it checks for both ButtonTwoSingleClick and ButtonTwo in the same control path,
+    // ButtonTwoSingleClick will never fire. To prevent this, never combine a delayed button press check
+    // with an immediate press check.
+    //
+    // However, this fixes erroneous double-firing along *separate* control paths, since it essentially
+    // detects whether a conditional has returned true and cancels all pending delayed clicks.
+    // The alternative involved canceling on trigger-state changes, which would swallow ExtraMode clicks
+    // the user releases the trigger too quickly.
+    public bool ClickedThisFrame(bool shouldReset = true)
+    {
+        bool wasPressedThisFrame = OVRInput.GetDown(_button);
+        if (shouldReset && wasPressedThisFrame) Reset();
+        return wasPressedThisFrame;
+    }
+
+    public void RegisterClick()
+    {
+        _beforeLastPress = _lastPress;
+        _lastPress = Time.time;
+        if (_triggeredDouble) _triggeredDouble = false;
+        if (_triggeredSingle) _triggeredSingle = false;
+    }
+
+    public void Reset()
+    {
+        _lastPress = _beforeLastPress = float.MinValue;
+        _triggeredSingle = _triggeredDouble = false;
+    }
+}*/
+public class DelayedButton
+{
+    OVRInput.Button _button;
+
+    float _latestClickTime;
+    float _clickCounter;
+    float _waitPerPress;
+    float _waitPadding;
+
+    public DelayedButton(OVRInput.Button button, float waitPerPress = 0.3f, float waitPadding = 0.2f)
+    {
+        _button = button;
+        _waitPerPress = waitPerPress;
+        _waitPadding = waitPadding;
+
+        Reset();
+    }
+    public bool MultiClickedPro(int clickCount)
+    {
+        if (_clickCounter == clickCount &&
+            Time.time - _latestClickTime >= _waitPerPress &&
+            Time.time - _latestClickTime < _waitPerPress + _waitPadding
+        )
+        {
+            Reset();
+            return true;
+        }
+        return false;
+    }
+
+    public bool SingleClicked() => MultiClickedPro(1);
+    public bool DoubleClicked() => MultiClickedPro(2);
+
+
+    public bool ClickedThisFrame(bool shouldReset = true)
+    {
+        bool wasPressedThisFrame = OVRInput.GetDown(_button);
+        if (shouldReset && wasPressedThisFrame) Reset();
+        return wasPressedThisFrame;
+    }
+
+    public void RegisterClick()
+    {
+        if (Time.time - _latestClickTime > _waitPerPress + _waitPadding && _clickCounter > 0)
+            _clickCounter = 0;
+
+        _latestClickTime = Time.time;
+        _clickCounter++;
+    }
+    public void Reset()
+    {
+        _latestClickTime = float.MinValue;
+        _clickCounter = 0;
+    }
+}
+
+
+
 // Syntactic sugar for OVRInput
 public class RightController
 {
@@ -67,6 +184,10 @@ public class RightController
     private static float _indexTriggerLast = 0;
 
     private static ThumbstickMode _thumbstickMode = ThumbstickMode.Centered;
+
+    private static DelayedButton _delayedButtonOne = new DelayedButton(OVRInput.Button.One);
+    private static DelayedButton _delayedButtonTwo = new DelayedButton(OVRInput.Button.Two);
+    private static DelayedButton _delayedThumbstickButton = new DelayedButton(OVRInput.Button.SecondaryThumbstick);
 
     public static void Update()
     {
@@ -89,8 +210,15 @@ public class RightController
                 _ThumbstickMostlyX ? ThumbstickMode.MostlyX :
                 _ThumbstickMostlyY ? ThumbstickMode.MostlyY :
                 ThumbstickMode.Undefined; // It should never be this.
-        
-    }
+
+        if (Hands) return;
+        if (_delayedButtonOne.ClickedThisFrame(false)) // shouldReset = false
+            _delayedButtonOne.RegisterClick();
+        if (_delayedButtonTwo.ClickedThisFrame(false))
+            _delayedButtonTwo.RegisterClick();
+        if (_delayedThumbstickButton.ClickedThisFrame(false))
+            _delayedThumbstickButton.RegisterClick();
+     }
     public static bool HandTrigger
     {
         get => _handTrigger > 0;
@@ -117,7 +245,7 @@ public class RightController
     }
     public static bool HandTriggerStop
     {
-        get => _handTriggerLast > 0 && _handTrigger == 0; 
+        get => _handTriggerLast > 0 && _handTrigger == 0;
     }
     public static bool IndexTriggerStart
     {
@@ -156,18 +284,55 @@ public class RightController
     {
         get => _indexTrigger == 0 && _handTrigger == 0;
     }
+
     public static bool ButtonOne
     {
-        get => !Hands && OVRInput.GetDown(OVRInput.Button.One);
+        get => !Hands && _delayedButtonOne.ClickedThisFrame();
     }
+
+    public static bool ButtonOneSingleClick
+    {
+        get => _delayedButtonOne.MultiClickedPro(1);
+    }
+    public static bool ButtonOneDoubleClick
+    {
+        get => _delayedButtonOne.MultiClickedPro(2);
+    }
+    public static bool ButtonOneTripleClick
+    {
+        get => _delayedButtonOne.MultiClickedPro(3);
+    }
+    
     public static bool ButtonTwo
     {
-        get => OVRInput.GetDown(OVRInput.Button.Two);
+        get => _delayedButtonTwo.ClickedThisFrame();
     }
+    public static bool ButtonTwoSingleClick
+    {
+        get => _delayedButtonTwo.MultiClickedPro(1);
+    }
+    public static bool ButtonTwoDoubleClick
+    {
+        get => _delayedButtonTwo.MultiClickedPro(2);
+    }
+    public static bool ButtonTwoTripleClick
+    {
+        get => _delayedButtonTwo.MultiClickedPro(3);
+    }
+
     public static bool ThumbstickButton
     {
-        get => OVRInput.GetDown(OVRInput.Button.SecondaryThumbstick);
+        get => _delayedThumbstickButton.ClickedThisFrame();
     }
+    public static bool ThumbstickButtonSingleClick
+    {
+        get => _delayedThumbstickButton.SingleClicked();
+    }
+    public static bool ThumbstickButtonDoubleClick
+    {
+        get => _delayedThumbstickButton.DoubleClicked();
+    }
+
     public static bool ThumbstickCentered
     {
         get => _axes.x == 0 && _axes.y == 0;

@@ -1,5 +1,6 @@
 Shader "Skybox/CineosisPanoramic" {
 Properties {
+    [Toggle] _VerticalFlip("VerticalFlip", Float) = 0
     UseDifferenceMask("Use Difference Mask", Float) = 0
     _TestX ("TestX", Range(0, 5)) = 0
     _TestY ("TestY", Range(0, 50)) = 0
@@ -17,7 +18,7 @@ Properties {
     _MatteThresholdG("Matte Threshold G", Range(0, 1)) = 1
     _MatteThresholdB("Matte Threshold B", Range(0, 1)) = 1
     _Tint ("Tint Color", Color) = (.5, .5, .5, .5)
-    _Transparency ("Transparency", Range(0, 1)) = 0.2
+    _Transparency ("Transparency", Range(0, 1.5)) = 0.2
     _Saturation ("Saturation", Range(0, 1)) = 0.0
     [Gamma] _Exposure ("Exposure", Range(0, 8)) = 1.0
     _Contrast ("Contrast", Range(0, 2)) = 1.0
@@ -82,6 +83,7 @@ SubShader {
         #include "./cginc/masking.cginc"
         #include "./cginc/shapes.cginc"
 
+        float _VerticalFlip;
         float4 _ColorTest;
         float _TestX;
         float _TestY;
@@ -394,17 +396,15 @@ SubShader {
             if (_Layout == 2)
                 tc.x *= 1+(_Zoom*0.5);
 
-            // Flip
             // use first value to do horizontal offset
-            // only works with side-by-side for now
 
             if (unity_StereoEyeIndex == 1)
-                if (_VideoIndex != 1)
+                if (_VerticalFlip == 0)
                     tc.x -= (_HorizontalOffset + _NudgeZ) * 0.02;
                 else 
                     tc.x = 1.00 - tc.x - (_HorizontalOffset + _NudgeZ) * 0.02;
             if (unity_StereoEyeIndex == 0)
-                if (_VideoIndex != 1)
+                if (_VerticalFlip == 0)
                     tc.x += (_HorizontalOffset + _NudgeZ) * 0.02;
                 else
                     tc.x = 1.00 - tc.x + (_HorizontalOffset + _NudgeZ) * 0.02;
@@ -414,20 +414,26 @@ SubShader {
 
             // New default: 9 on _ZoomShiftX, 4 on _ZoomShiftY, range between 1 and 10
 
-            if (_VideoIndex == 1)
-                tc.x -= _NudgeX - round(_Zoom*(0.14285+_ZoomShiftX*0.5) * 1000)/1000; // headset movement compensation, with centering term! (was 7, ~0.14285)
-             else
+            if (_VerticalFlip == 1)
+                tc.x -= _NudgeX - round(_Zoom*(0.11111+(_ZoomShiftX+layoutZoomShiftX)*0.5) * 1000)/1000; 
+                /* Old value for arbitrarily flipped clip: */
+                /*tc.x -= _NudgeX - round(_Zoom*(0.14285+_ZoomShiftX*0.5) * 1000)/1000;*/ // headset movement compensation, with centering term! (was 7, ~0.14285)
+            else
                 tc.x += _NudgeX - round(_Zoom*(0.11111+(_ZoomShiftX+layoutZoomShiftX)*0.5) * 1000)/1000; // headset movement compensation, with centering term! (was 9, ~0.11111)
 
-            if (_VideoIndex == 1)
-                tc.y -= _NudgeY + round(_Zoom*(0.2+(_ZoomShiftY)*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 5, 0.2)
-//            else if (_VideoIndex == 0)
-//              tc.y -= _NudgeY + round(_Zoom*(0.25+_ZoomShiftX*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 4, 0.25)
-            else
-                // I think this should about around 0.135, based on the Ryoukan clip
-                tc.y -= _NudgeY + round(_Zoom*(0.135+(_ZoomShiftY)*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 8, 0.25)
+            //if (_VideoIndex == 1)
+                /* Old value for arbitrarily flipped clip: */
+                /*tc.y -= _NudgeY + round(_Zoom*(0.2+(_ZoomShiftY)*0.5) * 1000)/1000;*/ // NOTE: _Zoom/4 is a centering term (was 5, 0.2)
 
-            if (_VideoIndex == 1)
+            /* Old value */
+            //else if (_VideoIndex == 0)
+            //  tc.y -= _NudgeY + round(_Zoom*(0.25+_ZoomShiftX*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 4, 0.25)
+
+            //else
+                // I think this should about around 0.135:
+            tc.y -= _NudgeY + round(_Zoom*(0.135+(_ZoomShiftY)*0.5) * 1000)/1000; // NOTE: _Zoom/4 is a centering term (was 8, 0.25)
+
+            if (_VerticalFlip == 1)
                tc.y = 1.00 - tc.y;
                //tc.x = 1.00 - tc.x;
 #endif
@@ -525,15 +531,21 @@ SubShader {
 */
 
            
-            if (_UseDifferenceMask == 1) {
+            if (_UseDifferenceMask == 4) {
                 float4 dynThresh = tex2D(_DynThreshTex, tc);
+                //return dynThresh;
                 //tex.a = pow(dynThresh*3, 2);
+                //tex.a = dynThresh.a;
+
                 tex.a = pow(dynThresh.a*_DynThreshMultiplier,_DynThreshPower)*maxAlpha;
+                tex.rgb *= min(tex.a, 1);
+
+
                 //tex.a = pow(tex2D(_DynThreshTex, tc)*1.5, 2);
                 //return tex;
             }
 
-            if (_UseDifferenceMask == 11) {
+            if (_UseDifferenceMask == 1) {
                 float d1 = cie94(texLab, lastLab);
                 float d2 = cie94(texLab, lastLab2);
                 float d3 = cie94(texLab, lastLab3);
@@ -618,7 +630,7 @@ SubShader {
 
             if (_UseDifferenceMask == 3) {
                 tex.a = pow(tex2D(_MatteMaskAlphaTex, tc)*_MatteAlphaMultiplier, _MatteAlphaPower)*maxAlpha;
-
+                tex.rgb *= min(tex.a, 1);
                 //tex.a = tex2D(_MatteMaskAlphaTex, tc) * maxAlpha;
                 //tex.a = 0;
 

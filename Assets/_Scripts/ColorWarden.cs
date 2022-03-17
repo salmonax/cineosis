@@ -38,7 +38,9 @@ public class ColorWarden
     Color[] _sortedColors;
     float[] _sortedFreqs;
 
-    Color[] _outputColors;
+    Color[] _exclusionOutputColors;
+    Color[] _inclusionOutputColors;
+
 
     Color ToHSV(Color c)
     {
@@ -111,14 +113,14 @@ public class ColorWarden
 
     public Color[] Inclusions
     {
-        get => GetOutputSamples(_inclusions, _inclusionsFreq);
+        get => GetOutputSamples(_inclusions, _inclusionsFreq, _inclusionOutputColors);
     }
     public Color[] Exclusions
     {
-        get => GetOutputSamples(_exclusions, _exclusionsFreq);
+        get => GetOutputSamples(_exclusions, _exclusionsFreq, _exclusionOutputColors);
     }
 
-    public Color[] GetOutputSamples(Color[] samples, int[] samplesFreq)
+    public Color[] GetOutputSamples(Color[] samples, int[] samplesFreq, Color[] outputColors)
     {
         samplesFreq.CopyTo(_sortedFreqs, 0);
         samples.CopyTo(_sortedColors, 0);
@@ -126,13 +128,11 @@ public class ColorWarden
         System.Array.Copy(
             _sortedColors,
             _sampleLength - _segmentLength,
-            _outputColors,
+            outputColors,
             0,
             _segmentLength
         );
-        //Debug.Log(_outputColors[0] + " " + _outputColors[39]);
-        //Debug.Log(_sortedFreqs[_sampleLength - _segmentLength] + " " + _sortedFreqs[_sampleLength - _segmentLength / 2] + " " + _sortedFreqs[_sampleLength - 1]);
-        return (Color[])_outputColors.Clone();
+        return outputColors;
     }
 
     public ColorWarden(int segmentLength, int maxFreqWeight = 10, int sampleLength = 512)
@@ -153,7 +153,8 @@ public class ColorWarden
         _sortedColors = new Color[sampleLength];
         _sortedFreqs = new float[sampleLength];
 
-        _outputColors = new Color[segmentLength];
+        _exclusionOutputColors = new Color[segmentLength];
+        _inclusionOutputColors = new Color[segmentLength];
 
         Reset();
     }

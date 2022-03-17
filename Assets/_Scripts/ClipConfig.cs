@@ -6,7 +6,7 @@ using UnityEngine;
 public class ClipConfig
 {
     // Manually increment this when changing the format!
-    public int version = 28;
+    public int version = 32;
 
     // Note on the properties:
     //  1) The default values will override the Skybox Material properties
@@ -43,9 +43,42 @@ public class ClipConfig
     public float _Exposure = 0.6f;
     public float _Contrast = 1;
 
-    public float _Transparency = 1;
+    public float _Transparency = 1.5f; // urgh...
 
     public float _UseDifferenceMask = 0;
+
+    public float _VerticalFlip = 0;
+
+
+    // Argh, kludge; just for this debug period:
+    [System.NonSerialized]
+    static string[] dynThreshFields = {
+        "_SampleDecay",
+        "_OutputDecay",
+        "_ColorDistMultThresh",
+        "_ColorDistMultStrength",
+        "_DecayDampThresh",
+        "_DecayDampStrength",
+        "_DistMultiplier",
+        "_DistPower",
+        "_InnerThreshMultiplier",
+        "_InnerThreshPower",
+    };
+
+    // DynThresh values;
+    // Note: this will save unique values for each clip.
+    // For kludge purposes, pass the current index to GlobalizeDynThresh to copy them across
+    // all ClipConfigs.
+    public float _SampleDecay = 0.5f;
+    public float _OutputDecay = 0.5f;
+    public float _ColorDistMultThresh = 0;
+    public float _ColorDistMultStrength = 0;
+    public float _DecayDampThresh = 0;
+    public float _DecayDampStrength = 0;
+    public float _DistMultiplier = 1;
+    public float _DistPower = 1;
+    public float _InnerThreshMultiplier = 1;
+    public float _InnerThreshPower = 1;
 
     // used to trigger a save when modified
     [System.NonSerialized]
@@ -55,16 +88,40 @@ public class ClipConfig
     // Used for loading settings to the Skybox.
     // WARNING: it follows a brittle convention and doesn't
     //  bother to verify that the target has the properties!
-    public void ApplyToMaterial(Material material)
+    public void ApplyToMaterial(Material material, bool useDynThreshFields = false)
     {
         var fields = typeof(ClipConfig).GetFields();
         for (int i = 0; i < fields.Length; i++)
         {
             var name = fields[i].Name;
-            if (name[0] == '_' && char.IsUpper(name[1]))
+
+            var dynThreshSwitch = System.Array.IndexOf(dynThreshFields, name) == -1; // NOT in the list
+            if (useDynThreshFields) dynThreshSwitch = !dynThreshSwitch;
+
+            //Debug.Log("APPLY TO MATERIAL CALLED: " + name);
+            if (name[0] == '_' && char.IsUpper(name[1]) && dynThreshSwitch)
             {
-                //Debug.Log((float)fields[i].GetValue(this));
+                //Debug.Log("@ INSIDE CONDITIONAL: " + name);
                 material.SetFloat(name, (float)fields[i].GetValue(this));
+            }
+        }
+    }
+
+    // This is a kludge to copy the dynThresh values at a given index to ALL
+    // clipConfigs.
+    public static void GlobalizeDynThresh(ClipConfig[] clipConfigs, int index)
+    {
+        var fields = typeof(ClipConfig).GetFields();
+        for (int i = 0; i < clipConfigs.Length; i++)
+        {
+            for (int j = 0; j < fields.Length; j++)
+            {
+                var name = fields[j].Name;
+                if (System.Array.IndexOf(dynThreshFields, name) > -1)
+                {
+                    var fieldInfo = typeof(ClipConfig).GetField(name);
+                    fieldInfo.SetValue(clipConfigs[i], fieldInfo.GetValue(clipConfigs[index]));
+                }
             }
         }
     }
@@ -96,7 +153,7 @@ public class ClipConfig
         if (PlayerPrefs.HasKey("ClipConfig"))
         {
             string saveString = PlayerPrefs.GetString("ClipConfig");
-            Debug.Log(saveString);
+            Debug.Log("ClipConfig.Load(): " + saveString);
             string[] loadedStringArray = saveString.Split('|');
             ClipConfig[] loadedSaves = new ClipConfig[loadedStringArray.Length];
             for (int i = 0; i < loadedStringArray.Length; i++)

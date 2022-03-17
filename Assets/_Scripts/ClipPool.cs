@@ -12,9 +12,13 @@ public class ClipPool
 
     public int nextIndex(int increment = 1)
     {
-        return (_curClipCursor + increment) % _clipPlayers.Length;
+        Debug.Log("!!! " + increment);
+        var summedIndex = _curClipCursor + increment;
+        if (summedIndex < 0)
+            summedIndex = (summedIndex % _clipPlayers.Length) + _clipPlayers.Length;
+        return summedIndex % _clipPlayers.Length;
     }
-    void incrementCursor() => _curClipCursor = nextIndex();
+    void moveCursor(int offset) => _curClipCursor = nextIndex(offset);
 
     public VideoPlayer[] clips
     {
@@ -33,22 +37,26 @@ public class ClipPool
         get => _curClipCursor;
     }
 
-    public void Next(System.Action<VideoPlayer, int> onChange)
+    public void Next(System.Action<VideoPlayer, int> onChange, int offset = 1)
     {
-        incrementCursor();
+        moveCursor(offset);
+        int sign = (int) Mathf.Sign(offset);
         if (current.isPrepared)
         {
-            _clipPlayers[nextIndex(1)].Prepare();
-            _clipPlayers[nextIndex(2)].Prepare();
+            Debug.Log("ClipPool Already Prepared on Next()");
+            _clipPlayers[nextIndex(sign * 1)].Prepare();
+            _clipPlayers[nextIndex(sign * 2)].Prepare();
             onChange(current, index);
         }
         else
         {
-            current.prepareCompleted += (_) =>
+            current.prepareCompleted += (prepared) =>
             {
-                _clipPlayers[nextIndex(1)].Prepare();
-                _clipPlayers[nextIndex(2)].Prepare();
-                onChange(current, index);
+                Debug.Log("ClipPool called after prepare: " + offset);
+
+                _clipPlayers[nextIndex(sign * 1)].Prepare();
+                _clipPlayers[nextIndex(sign * 2)].Prepare();
+                onChange(prepared, index);
             };
             current.Prepare();
         }
@@ -69,7 +77,7 @@ public class ClipPool
             _clipPlayers[i] = ClipProvider.GetExternal(clipList[i]);
             _matteTextures[i] = ClipProvider.GetExternalMatte(clipList[i]);
         }
-        _clipPlayers[0].Prepare();
-        _clipPlayers[nextIndex(1)].Prepare(); // won't fail on 1 video
+        //_clipPlayers[0].Prepare();
+        //_clipPlayers[nextIndex(1)].Prepare(); // won't fail on 1 video
     }
 }

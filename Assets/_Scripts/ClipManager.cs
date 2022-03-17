@@ -32,34 +32,14 @@ public partial class ClipManager : MonoBehaviour
     public Outliner outliner;
     public GameObject sizingBar;
     public GameObject debugContainer;
+    public GameObject debugGuiCanvas;
     public SwatchPicker swatchDetector;
     public float combinedZoomFactor = -3.6f; // decent default
 
     // INPUTCONTROLLER - these belong here
     public ClipConfig[] clipConfigs;
-    private long lastFrameIdx = 0;
-    private bool shouldRender = true;
-    public RenderTexture[] dsts = new RenderTexture[3];
-    public RenderTexture combinedDynAlpha;
-    public RenderTexture dynBlurredAlpha;
-    public RenderTexture combinedAlpha;
-    public RenderTexture blurredAlpha;
-
-
-    private Material diffBlitMat; // The one that actually does the difference comparison
-
-    private Material colorArrayBlitMat; // for a smaller _LastTex to generate an alpha
-    public RenderTexture colorMaskAlpha;
-    public Material colorMaskBlurBlit;
-    public RenderTexture blurredColorMaskAlpha;
-    public RenderTexture smallFrameTex;
-
-    //private Material dynBlitMat;
-    private Material dynBlurMat;
-    private Material blurMat;
 
     private GameObject pointer;
-    bool finishedInitialCapture = false;
 
     private InputController _inputController;
 
@@ -67,22 +47,26 @@ public partial class ClipManager : MonoBehaviour
 
     public bool useAutoShiftMode = false;
 
-    private float _isDifferenceMaskEnabled; // overrides _UseDifferenceMask in shader
-    private int _differenceMaskCount = 3; // used to mod across modes
-
     ClipConfig _undoConfig = null;
 
     GameObject _rightHand;
     GameObject _smoothDampAnchor;
+    GameObject _headDampAnchor;
 
     public static Vector2 hpLeft = new Vector2(0, 0);
     public static Vector2 hpRight = new Vector2(0, 0);
+
+    public MaskManager maskManager;
 
     private void Awake()
     {
         Blitter.Init(); // currently just applies Gaussian kernels
         ClipProvider.CheckAndRequestPermissions();
         clipPool = new ClipPool(CoreConfig.clips);
+        // MASKMANAGER TODO: Move these definitions from Start() and init MaskManager:
+        skyboxMat = RenderSettings.skybox;
+        InitClipConfigs();
+        maskManager = new MaskManager(skyboxMat, clipPool, clipConfigs); // ruh roh
     }
 
     private static GameObject[] _swatches;
@@ -91,6 +75,10 @@ public partial class ClipManager : MonoBehaviour
     {
         _swatches = new GameObject[rows * cols];
         GameObject swatchTemplate = GameObject.Find("SwatchSource");
+        GameObject swatchGridAnchor = GameObject.Find("SwatchGridAnchor");
+        var scale = 0.1f;
+        var offsetX = 0.4f;
+        var offsetY = -0.70f;
 
         for (int i = 0; i < rows;  i++)
         {
@@ -99,10 +87,11 @@ public partial class ClipManager : MonoBehaviour
                 var swatch =
                     Instantiate(
                         swatchTemplate,
-                        swatchTemplate.transform.position + new Vector3(i * 0.1f, j * -0.1f, 0),
+                        swatchTemplate.transform.position + new Vector3(offsetX + i * 0.1f*scale, offsetY + j * -0.1f*scale, 0.52f),
                         swatchTemplate.transform.rotation
                     );
                 swatch.GetComponent<MeshRenderer>().enabled = true;
+                swatch.transform.SetParent(swatchGridAnchor.transform, true);
                 _swatches[j*rows + i] = swatch;
             }
            
@@ -112,6 +101,10 @@ public partial class ClipManager : MonoBehaviour
     {
         _exclusionSwatches = new GameObject[rows * cols];
         GameObject swatchTemplate = GameObject.Find("SwatchSource");
+        GameObject swatchGridAnchor = GameObject.Find("SwatchGridAnchor");
+        var scale = 0.1f;
+        var offsetX = 0.4f;
+        var offsetY = -0.70f;
 
         for (int i = 0; i < rows; i++)
         {
@@ -120,10 +113,11 @@ public partial class ClipManager : MonoBehaviour
                 var swatch =
                     Instantiate(
                         swatchTemplate,
-                        swatchTemplate.transform.position + new Vector3(1.5f + i * 0.1f, j * -0.1f, 0),
+                        swatchTemplate.transform.position + new Vector3(offsetX + 1.25f*scale + i * 0.1f*scale, offsetY + j * -0.1f*scale, 0.52f),
                         swatchTemplate.transform.rotation
                     );
                 swatch.GetComponent<MeshRenderer>().enabled = true;
+                swatch.transform.SetParent(swatchGridAnchor.transform, true);
                 _exclusionSwatches[j * rows + i] = swatch;
             }
 
@@ -141,9 +135,14 @@ public partial class ClipManager : MonoBehaviour
     }
     public static void SetExclusionSwatches(Color[] colors) => SetSwatches(colors, _exclusionSwatches);
 
+    Vector3 guiOffsetEuler = new Vector3(0, 20, 0);
     void Start()
     {
         _head = GameObject.Find("CenterEyeAnchor");
+        _headDampAnchor = GameObject.Find("HeadDampAnchor");
+        _headDampAnchor.transform.position = _head.transform.position;
+        _headDampAnchor.transform.rotation = _head.transform.rotation * Quaternion.Euler(guiOffsetEuler);
+
         _rightHand = GameObject.Find("RightHandAnchor");
         _smoothDampAnchor = GameObject.Find("SmoothDampAnchor");
 
@@ -152,7 +151,6 @@ public partial class ClipManager : MonoBehaviour
         handMat = Resources.Load<Material>("BasicHandMaterialHSBE");
 
         skyboxTex = Resources.Load<RenderTexture>("SkyboxTexture");
-        skyboxMat = RenderSettings.skybox;
 
         if (OVRManager.isHmdPresent)
             OVRManager.display.RecenteredPose += ResetHeadSync;
@@ -164,27 +162,31 @@ public partial class ClipManager : MonoBehaviour
         //skyboxMat.SetFloat("_UseSwatchPickerMode", 0);
 
         var centerEye = GameObject.Find("CenterEyeAnchor");
+
         camera = centerEye.GetComponent<Camera>();
         swatchDetector = centerEye.GetComponent<SwatchPicker>();
         outliner = centerEye.GetComponent<Outliner>();
 
         sizingBar = GameObject.Find("SizingBar");
         debugContainer = GameObject.Find("DebugText");
+        debugGuiCanvas = GameObject.Find("DebugGuiCanvas");
+        debugGuiCanvas.transform.SetParent(_headDampAnchor.transform, true);
 
         debugText = (UnityEngine.UI.Text)debugContainer.GetComponent("Text");
 
-        skyboxMat.SetInt("_VideoIndex", 0);
-
-        InitClipConfigs();
-        Blitter.SetCurrentMatte(clipPool.currentMatte);
-        PullAndSetMaskState();
         DisableDebugGUI();
+        PlayClipAtIndexOffset(0);
 
-        // Hmm, the clipPool should be doing this (it's basically just PlayNextClip):
-        var clipOne = clipPool.current;
-        clipOne.prepareCompleted += SetLayoutFromResolution;
-        clipOne.targetTexture = skyboxTex;
-        clipOne.Play();
+        //InitClipConfigs();
+        //Blitter.SetCurrentMatte(clipPool.currentMatte);
+        //PullAndSetMaskState();
+        //DisableDebugGUI();
+
+        //// Hmm, the clipPool should be doing this (it's basically just PlayNextClip):
+        //var clipOne = clipPool.current;
+        //clipOne.prepareCompleted += SetLayoutFromResolution;
+        //clipOne.targetTexture = skyboxTex;
+        //clipOne.Play();
     }
 
     void SetLayoutFromResolution(VideoPlayer preparedPlayer)
@@ -226,183 +228,21 @@ public partial class ClipManager : MonoBehaviour
         }
         // Go ahead and save the newly merged configs
         ClipConfig.Save(clipConfigs);
-        clipConfigs[0].ApplyToMaterial(skyboxMat);
+
+        // Note: want to get rid of this call site (having PlayClipAtIndexOffset(0) do it instead):
+        //clipConfigs[0].ApplyToMaterial(skyboxMat);
+        //clipConfigs[0].ApplyToMaterial(Blitter.dynThreshBlitMat, true); // useDynThreshFields = true
         // -- END ClipConfig Loading
     }
 
     //Save save = new Save();
     //Save[] saves = new Save[] { new Save(), new Save() };
 
-    // Call with false when updating from settings:
-    void EnableMask(bool pushSetting = true)
-    {
-        if (pushSetting)
-        {
-            _isDifferenceMaskEnabled = (_isDifferenceMaskEnabled + 1) % (_differenceMaskCount + 1);
-            skyboxMat.SetFloat("_UseDifferenceMask", _isDifferenceMaskEnabled);
-            clipConfigs[clipPool.index].SetFloatIfPresent("_UseDifferenceMask", _isDifferenceMaskEnabled);
-        }
-        var clip = getCurrentPlayer();
-        clip.sendFrameReadyEvents = true;
-        clip.frameReady += OnNewFrame;
-        clip.loopPointReached += EndReached;
-    }
-
-    void DisableMask(bool pushSetting = true)
-    {
-        if (pushSetting)
-        {
-            _isDifferenceMaskEnabled = 0;
-            skyboxMat.SetFloat("_UseDifferenceMask", 0);
-            clipConfigs[clipPool.index].SetFloatIfPresent("_UseDifferenceMask", 0);
-        }
-        var clip = getCurrentPlayer();
-        clip.sendFrameReadyEvents = false;
-        clip.frameReady -= OnNewFrame;
-        clip.loopPointReached -= EndReached;
-    }
-
-    void PullAndSetMaskState()
-    {
-        _isDifferenceMaskEnabled = skyboxMat.GetFloat("_UseDifferenceMask");
-        if (_isDifferenceMaskEnabled > 0)
-            EnableMask(false);
-        else
-            DisableMask(false);
-    }
-
-
-    // Video stuff MIGHT look like this:
-    FrameSkipper _colorMaskSkipper = new FrameSkipper(1);
-    public VideoPlayer lastSource;
-    public void RenderColorMaskTick(VideoPlayer source)
-    {
-        // Note: lastSource is a swatchPicker thing, so this needs to be refactored
-        // to not be weird
-        if (source != lastSource) lastSource = source;
-        if (_colorMaskSkipper.Skip()) return;
-
-        Blitter.ApplySmallFrame(skyboxMat, source.texture);
-        Blitter.ApplyColorMask(skyboxMat, source.texture);
-    }
-
-    //int[] frameSkips = new int[] { 1, 3, 5, 3 };
-    int[] frameSkips = new int[] { 1 };
-    int frameSkipCursor = 0;
-    int frameSkip
-    {
-        get {
-            var current = frameSkips[frameSkipCursor];
-            frameSkipCursor = (frameSkipCursor + 1) % frameSkips.Length;
-            return current;
-        }
-    }
-    void OnNewFrame(VideoPlayer source, long frameIdx)
-    {
-        if (_isDifferenceMaskEnabled == 0) return; // just in case the listener lingers; handle better
-        if (_isDifferenceMaskEnabled == 3)
-        {
-            if (clipPool.currentMatte)
-                Blitter.ApplyMatteAlpha(skyboxMat, source.texture, clipPool.currentMatte, frameIdx % 2 == 0);
-            else
-                CycleMaskModes(); // Just get out of the mode! Real easy-like.
-            return;
-        }
-        if (_isDifferenceMaskEnabled == 2)
-            RenderColorMaskTick(source); // not differentiating eyes, and brittle when called from swatchPicker!
-
-        if (lastFrameIdx == 0 || frameIdx - lastFrameIdx > frameSkip) // was 18 for initial capture
-        {
-            if (lastFrameIdx == 0 || !shouldRender)
-            {
-                if (dsts[0]) // shunt forward; newest always at 0.
-                {
-                    var tmp = dsts[2];
-                    dsts[2] = dsts[1];
-                    dsts[1] = dsts[0];
-                    dsts[0] = tmp;
-                }
-                // this will be true until all three textures exist,
-                // ensuring that only three RenderTextures are created:
-                if (!dsts[0])
-                {
-                    dsts[0] = new RenderTexture((int)source.width, (int)source.height, 16);
-                    dsts[0].enableRandomWrite = true;
-                    dsts[0].Create();
-                }
-
-                // Can probably do this one and dsts[0] differently:
-                Blitter.Clear((RenderTexture)source.texture, dsts[0]);
-            }
-
-            if (lastFrameIdx == 0 || shouldRender)
-            {
-                // Note: this will fill each one out as they come in.
-                if (_isDifferenceMaskEnabled == 1)
-                {
-                    Blitter.SetRunningTextures(skyboxMat, dsts);
-
-                    Blitter.SetRunningTextures(Blitter.dynThreshBlitMat, dsts);
-                    Blitter.ApplyDynThresh(skyboxMat, source.texture);
-                }
-
-                // Update the difference mask textures regardless of mode
-                Blitter.SetRunningTextures(Blitter.diffMaskBlitMat, dsts);
-
-                if (_isDifferenceMaskEnabled == 1)
-                {
-                    Blitter.ApplyDifferenceMask(skyboxMat, dsts);
-                }
-                else if (_isDifferenceMaskEnabled == 2)
-                    Blitter.ApplyDifferenceMask(Blitter.colorMaskBlitMat, dsts);
-
-                //skyboxMat.SetTexture("_DynAlphaTex", combinedDynAlpha);
-
-
-                // Only run the following once, regardless of whether there's an early return above.
-                if (dsts[2] && !finishedInitialCapture)
-                {
-                    finishedInitialCapture = true;
-
-                    /* This section is for a static difference mask.
-                     * The shader is currently ignoring it.
-                     */
-
-                    //diffBlitMat.SetTexture("_LastTex", dsts[0]);
-                    //diffBlitMat.SetTexture("_LastTex2", dsts[1]);
-                    //diffBlitMat.SetTexture("_LastTex3", dsts[2]);
-
-                    //// Can scale from here:
-                    //if (!combinedAlpha)
-                    //{
-                    //    combinedAlpha = new RenderTexture((int)source.width / 10, (int)source.height / 10, 16);
-                    //    blurredAlpha = new RenderTexture((int)source.width / 10, (int)source.height / 10, 16);
-                    //}
-
-                    //RenderTexture.active = combinedAlpha;
-                    //GL.Clear(true, true, Color.black);
-                    //Graphics.Blit(null, combinedAlpha, blitMat);
-
-
-                    ////blurMat.SetTexture("_MainTex", combinedAlpha);-
-                    //RenderTexture.active = blurredAlpha;
-                    //GL.Clear(true, true, Color.black);
-                    //Graphics.Blit(combinedAlpha, blurredAlpha, blurMat);
-
-                    //skyboxMat.SetTexture("_AlphaTex", blurredAlpha);
-
-                }
-            }
-            shouldRender = !shouldRender;
-            lastFrameIdx = frameIdx;
-        }
-    }
-
     // Start is called before the first frame update
     string guiLabel(string label, int sigs, Material targetMat = null)
     {
         if (!targetMat) targetMat = skyboxMat;
-        return System.Math.Round(targetMat.GetFloat(label), sigs).ToString("0.00");
+        return System.Math.Round(targetMat.GetFloat(label), sigs).ToString("0." + new string('0', sigs));
     }
 
     string guiRound(float num)
@@ -486,8 +326,8 @@ public partial class ClipManager : MonoBehaviour
             var newHandSyncRotationX =
                 -(_handSyncPositionDelta.y / UnityEngine.XR.XRSettings.eyeTextureHeight) * Camera.current.fieldOfView;
 
-            skyboxMat.SetFloat("_RotationX", _skyboxRotationAtStart.x - newHandSyncRotationX);
-            skyboxMat.SetFloat("_RotationY", _skyboxRotationAtStart.y - newHandSyncRotationY);
+            SetProp("_RotationX", _skyboxRotationAtStart.x - newHandSyncRotationX, -180, 180);
+            SetProp("_RotationY", _skyboxRotationAtStart.y - newHandSyncRotationY, -180, 180);
         } else // use normal rotation-based handsync
         {
             var handSyncRotationDelta = (OneEightify(_handOrAnchor.transform.localEulerAngles) - _handRotationAtStart);
@@ -495,13 +335,14 @@ public partial class ClipManager : MonoBehaviour
             //skyboxMat.SetFloat("_RotationX", _smoothHandSyncRotation.x);
             //skyboxMat.SetFloat("_RotationY", _smoothHandSyncRotation.y);
             var newHandSyncRotation = _skyboxRotationAtStart - handSyncRotationDelta;
-            skyboxMat.SetFloat("_RotationX", newHandSyncRotation.x);
-            skyboxMat.SetFloat("_RotationY", newHandSyncRotation.y);
+            SetProp("_RotationX", newHandSyncRotation.x, -180, 180);
+            SetProp("_RotationY", newHandSyncRotation.y, -180, 180);
         }
 
 
         var handDistanceDelta = _handDistanceAtStart - Vector3.Distance(_head.transform.position, _handOrAnchor.transform.position);
-        skyboxMat.SetFloat("_BaseZoom", _baseZoomAtStart - 4.5788f * handDistanceDelta); // dead-reckoned magic number
+        SetProp("_BaseZoom", _baseZoomAtStart - 4.5788f * handDistanceDelta, -3.00f, 3.00f);
+        //skyboxMat.SetFloat("_BaseZoom", _baseZoomAtStart - 4.5788f * handDistanceDelta); // dead-reckoned magic number
     }
     // Run this on recenter:
     private void ResetHeadSync()
@@ -511,12 +352,22 @@ public partial class ClipManager : MonoBehaviour
 
     private Vector3 _dampPosVel = Vector3.zero;
     private Quaternion _dampRotVel = Quaternion.identity;
-
+    private Vector3 _headDampPosVel = Vector3.zero;
+    private Quaternion _headDampRotVel = Quaternion.identity;
+   
     void Update()
     {
         // Sync hand exposure and saturation to skybox
         handMat.SetFloat("_Exposure", Mathf.Pow(skyboxMat.GetFloat("_Exposure"), 2));
         handMat.SetFloat("_Saturation", skyboxMat.GetFloat("_Saturation"));
+        //SmoothDamp this in a second:
+        _headDampAnchor.transform.position =
+            Vector3.SmoothDamp(_headDampAnchor.transform.position, _head.transform.position, ref _headDampPosVel, 0.5f);
+            //_head.transform.position;
+        _headDampAnchor.transform.rotation =
+            Util.SmoothDampQuaternion(_headDampAnchor.transform.rotation, _head.transform.rotation, ref _headDampRotVel, 0.5f);
+            //_head.transform.rotation;
+
         if (OVRManager.isHmdPresent == true)
         {
             Vector3 head = _head.transform.position - _headPositionBasis;
@@ -530,6 +381,7 @@ public partial class ClipManager : MonoBehaviour
                 Vector3.SmoothDamp(_smoothDampAnchor.transform.position, _rightHand.transform.position, ref _dampPosVel, posTime);
             _smoothDampAnchor.transform.rotation =
                 Util.SmoothDampQuaternion(_smoothDampAnchor.transform.rotation, _rightHand.transform.rotation, ref _dampRotVel, rotTime);
+
 
             float effectivePitch = headRot180.x + skyboxMat.GetFloat("_RotationX"); // not right, but works here
             var ePitchRad = effectivePitch * Mathf.PI / 180;
@@ -598,38 +450,55 @@ public partial class ClipManager : MonoBehaviour
             LineRenderer line = pointer.GetComponent<LineRenderer>();
             var endPos = line.GetPosition(line.positionCount - 1);
             var foo = GameObject.Find("OVRHandPrefab_R").GetComponent<OVRHand>();
-            
+
 
 
             debugText.text =
                 "Grain Strength: " + guiLabel("_Strength", 2, Blitter.filmGrainMaterial) + "|\n|" +
                 "Grain Bias: " + guiLabel("_GrainBias", 2, Blitter.compositingMaterial) + "|\n|" +
+
+                ((_inputController.metaMode == MetaMode.Debug) ?
+                    "<color=yellow>" +
+                    "SampleDecay: " + guiLabel("_SampleDecay", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "OutputDecay: " + guiLabel("_OutputDecay", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "ColorDistMultThresh: " + guiLabel("_ColorDistMultThresh", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "ColorDistMultStrength: " + guiLabel("_ColorDistMultStrength", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "DecayDampThresh: " + guiLabel("_DecayDampThresh", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "DecayDampStrength: " + guiLabel("_DecayDampStrength", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "DistMultiplier: " + guiLabel("_DistMultiplier", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "DistPower: " + guiLabel("_DistPower", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "InnerThreshMultiplier: " + guiLabel("_InnerThreshMultiplier", 3, Blitter.dynThreshBlitMat) + "|\n|" +
+                    "InnerThreshPower: " + guiLabel("_InnerThreshPower", 3, Blitter.dynThreshBlitMat) + "|\n" +
+                    "</color>" :
+
                 //System.Math.Round(hand.x, 3) + " " +
                 //System.Math.Round(hand.y, 3) + " " +
                 //System.Math.Round(hand.z, 3) + " | " +
                 //ClipProvider.GetExternalFilesDir() + " | " +
-                "index: " + foo.GetFingerPinchStrength(OVRHand.HandFinger.Index) + "," +
-                    foo.GetFingerConfidence(OVRHand.HandFinger.Index) + "|\n|" + 
-                "middle: " + foo.GetFingerPinchStrength(OVRHand.HandFinger.Middle) + "," +
-                    foo.GetFingerConfidence(OVRHand.HandFinger.Middle) + "|\n|" +
-                "ring: " + foo.GetFingerPinchStrength(OVRHand.HandFinger.Ring) + "," +
-                    foo.GetFingerConfidence(OVRHand.HandFinger.Ring) + "|\n|" +
+                //"index: " + foo.GetFingerPinchStrength(OVRHand.HandFinger.Index) + "," +
+                //    foo.GetFingerConfidence(OVRHand.HandFinger.Index) + "|\n|" + 
+                //"middle: " + foo.GetFingerPinchStrength(OVRHand.HandFinger.Middle) + "," +
+                //    foo.GetFingerConfidence(OVRHand.HandFinger.Middle) + "|\n|" +
+                //"ring: " + foo.GetFingerPinchStrength(OVRHand.HandFinger.Ring) + "," +
+                //    foo.GetFingerConfidence(OVRHand.HandFinger.Ring) + "|\n|" +
                 guiLabel("_MatteAlphaMultiplier", 2) + ", " +
                 guiLabel("_MatteAlphaPower", 2) + " |\n| " +
+
+                // Rename to _MatteThreshMultiplier, etc.:
                 guiLabel("_WeightMultiplier", 2, Blitter.matteMaskAlphaBlitMat) + ", " +
                 guiLabel("_WeightPower", 2, Blitter.matteMaskAlphaBlitMat) + " |\n| " +
                 //guiLabel("_BlurX", 2, Blitter.matteMaskThreshBlurMat) + ", " +
                 //guiLabel("_BlurY", 2, Blitter.matteMaskThreshBlurMat) + " |\n| " +
 
-                //guiLabel("_BlurX", 2, Blitter.matteMaskAlphaBlurMat) + ", " +
-                //guiLabel("_BlurY", 2, Blitter.matteMaskAlphaBlurMat) + " |\n| " +
+                guiLabel("_BlurX", 2, Blitter.matteMaskAlphaBlurMat) + ", " +
+                guiLabel("_BlurY", 2, Blitter.matteMaskAlphaBlurMat) + " |\n| " +
                 "|LEFT EYE: " + hpLeft + "|\n|" +
                 "RIGHT EYE: " + hpRight + "|\n|" +
-                "HandOffsets: " + (outliner.handOffsetX+outliner.drHandOffsetX) + "," + (outliner.handOffsetY+outliner.drHandOffsetY) + "|\n|" +
+                "HandOffsets: " + (outliner.handOffsetX + outliner.drHandOffsetX) + "," + (outliner.handOffsetY + outliner.drHandOffsetY) + "|\n|" +
                 //"HandOffsets: " + outliner.handOffsetX + "," + outliner.handOffsetY + "|\n|" +
-                Vector3.Distance(_rightHand.transform.position, new Vector3(_head.transform.position.x, _rightHand.transform.position.y, _head.transform.position.z)) + "|\n|" + 
-//                _handSyncRotationDelta + "|\n|" +
-                skyboxMat.GetInt("_Layout") + "|\n|" + 
+                Vector3.Distance(_rightHand.transform.position, new Vector3(_head.transform.position.x, _rightHand.transform.position.y, _head.transform.position.z)) + "|\n|" +
+                //                _handSyncRotationDelta + "|\n|" +
+                skyboxMat.GetInt("_Layout") + "|\n|" +
                 swatchDetector.screenSpaceIndexColorLeft + "|\n|" +
                 System.Math.Round(laser.maxLength, 2).ToString("0.00") + "|" +
                 System.Math.Round(zc, 2).ToString("0.00") + "," +
@@ -657,10 +526,10 @@ public partial class ClipManager : MonoBehaviour
                 guiLabel("_NudgeFactorY", 2) + " |\n|" +
                 guiLabel("_RotationY", 2) + ", " + // ARGH, change these so X is SCREEN X!
                 guiLabel("_RotationX", 2) + "|\n" +
-                guiLabel("_VideoIndex", 2) + "|\n" +
+                guiLabel("_VideoIndex", 2) + "|\n") +
                 //vRot.ToString() + " " +
-                extraLabel + "\n" +
-                extraLabelOld;
+                extraLabel + "\n" + extraLabelOld;
+            ;
             //yc.ToString() + " " +
             //head.z.ToString() + " " +
             //head.y.ToString() + " ";
@@ -669,18 +538,48 @@ public partial class ClipManager : MonoBehaviour
     }
 
     VideoPlayer getCurrentPlayer() => clipPool.current;
-   
-    void _resetFrameCapture(bool diffMaskOnly = true)
+
+    void PlayClipAtIndexOffset(int offset)
     {
-        if (!diffMaskOnly || _isDifferenceMaskEnabled > 0)
+        Debug.Log("PLAY CLIP AT INDEX OFFSET CALLED: " + offset);
+        var exitingClip = clipPool.current;
+        maskManager.DisableFrameCapture(exitingClip); // same as no arg, but just to be clear
+        if (offset != 0) exitingClip.Pause();
+        clipPool.Next((VideoPlayer enteringClip, int newIndex) =>
         {
-            finishedInitialCapture = false;
-            //dsts = new RenderTexture[3];
-            lastFrameIdx = 0;
-            shouldRender = true;
-        }
+            // This callback runs after entering video is prepared.
+            // (small detail: clipPool also prepares the next two videos FIRST)
+            enteringClip.targetTexture = skyboxTex;
+            if (offset != 0) exitingClip.targetTexture = null;
+            skyboxMat.SetInt("_VideoIndex", newIndex);
+            SetLayoutFromResolution(enteringClip);
+
+            _undoConfig = null;
+            clipConfigs[newIndex].ApplyToMaterial(skyboxMat);
+            // Not necessary, but it'll surface any bugs related to globalizing the DynThresh fields.
+            clipConfigs[newIndex].ApplyToMaterial(Blitter.dynThreshBlitMat, true); // useDynThreshFields = true
+
+            Blitter.SetCurrentMatte(clipPool.currentMatte); // ignores if null
+            PullAndSetMaskState();
+            _resetFrameCapture(false); // don't check current mode
+            enteringClip.Play();
+
+            // Presentation debug
+            //skyboxMat.SetFloat("_RotationY", 134);
+            //skyboxMat.SetFloat("_ZoomShiftY", 0.8f);
+        }, offset);
     }
 
-    void EndReached(VideoPlayer vp) => _resetFrameCapture();
+    void SetProp(string prop, float value, float min, float max, Material targetMat = null)
+    {
+        if (!targetMat) targetMat = skyboxMat;
+        float newValue = Mathf.Clamp(value, min, max);
+        targetMat.SetFloat(prop, newValue);
+        // TODO: eliminate this awful dynThreshBlitMat kludge!
+        if (targetMat == skyboxMat || targetMat == Blitter.dynThreshBlitMat)
+            clipConfigs[clipPool.index].SetFloatIfPresent(prop, newValue);
+        if (targetMat == Blitter.dynThreshBlitMat)
+            ClipConfig.GlobalizeDynThresh(clipConfigs, clipPool.index);
+    }
 
 }

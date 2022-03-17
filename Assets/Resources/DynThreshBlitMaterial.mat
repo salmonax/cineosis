@@ -48,7 +48,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _LastTex:
-        m_Texture: {fileID: 8400000, guid: 1d0f8ab0a686247899f03a9a20f9aa80, type: 2}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _LastTex2:
@@ -60,7 +60,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 8400000, guid: 1d0f8ab0a686247899f03a9a20f9aa80, type: 2}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -84,14 +84,14 @@ Material:
     - TestW: 8
     - TestZ: 0.2
     - _BumpScale: 1
-    - _ColorDistMultMax: 40
-    - _ColorDistMultStrength: 30
-    - _ColorDistMultThresh: 0.009
+    - _ColorDistMultMax: 60
+    - _ColorDistMultStrength: 0
+    - _ColorDistMultThresh: 0
     - _Cutoff: 0.5
     - _DecayColorDampStrength: 0
     - _DecayColorDampThresh: 0
-    - _DecayDampStrength: 18.1
-    - _DecayDampThresh: 0.02
+    - _DecayDampStrength: 0
+    - _DecayDampThresh: 0
     - _DetailNormalMapScale: 1
     - _DistMultiplier: 1
     - _DistPower: 1
@@ -104,26 +104,29 @@ Material:
     - _HueInclusionThresh: 0
     - _IncludeSubtraction: 0
     - _IncludeThresh: 0
+    - _InnerThreshMultiplier: 1
+    - _InnerThreshPower: 1
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
-    - _OutputDecay: 0.7
+    - _OutputDecay: 0.5
     - _Parallax: 0.02
-    - _SampleDecay: 0.6
+    - _SampleDecay: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _TestV: 0
-    - _TestW: 2
+    - _TestW: 1
     - _TestX: 0.39
     - _TestY: 1
-    - _TestZ: 3
+    - _TestZ: 1
     - _UVSec: 0
     - _UseColorBias: 1
     - _UseHsvValue: 0
     - _UseHueValue: 0
     - _UseHueValueExclude: 0
     - _UseHueValueInclude: 0
+    - _UseInnerThresh: 1
     - _ZWrite: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}

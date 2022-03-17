@@ -2,6 +2,13 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+// Added this as a kludge for Debug mode:
+public enum MetaMode
+{
+    None,
+    Debug,
+}
+
 public enum ExtraMode
 {
     None, // 0
@@ -28,6 +35,7 @@ public class InputController
     ClipManager _ctx;
     public ExtraMode extraMode = ExtraMode.None;
     public TriggerMode triggerMode = TriggerMode.None;
+    public MetaMode metaMode = MetaMode.Debug; // Currently, for dialing in DynThresh
 
     public InputController(ClipManager ctx)
     {
@@ -41,6 +49,8 @@ public class InputController
     {
         extraMode = extraMode == mode && exitCondition ? ExtraMode.None : mode;
     }
+
+    void ToggleMetaMode(MetaMode mode) => metaMode = metaMode == mode ? MetaMode.None : mode;
 
     public void Run()
     {
@@ -76,6 +86,8 @@ public class InputController
                 _ctx.InitHeadSync(); // prevents stale headSync offsets
             _ctx.UpdateHeadSync();
         }
+        if (RightController.IndexTriggerStop)
+            _ctx.UpdateDirtyConfig();
 
         // Next, deal with buttons and thumbstick, with or without triggers:
         var thumb = RightController.ThumbstickMagnitude;
@@ -85,9 +97,21 @@ public class InputController
             case TriggerMode.None:
                 // First, deal with buttons, globally
                 // ButtonTwo is on top, ButtonOne is underneath
-                if (RightController.ButtonTwo) _ctx.PlayNextClip();
-                if (RightController.ButtonOne)_ctx.TogglePlaying();
-                if (RightController.ThumbstickButton) _ctx.ResetProps();
+                if (RightController.ButtonTwoSingleClick) _ctx.PlayNextClip();
+                if (RightController.ButtonTwoDoubleClick) _ctx.PlayPrevClip();
+                if (RightController.ButtonTwoTripleClick) _ctx.SeekAhead(-60);
+                if (RightController.ButtonOneSingleClick) _ctx.TogglePlaying();
+                if (RightController.ButtonOneDoubleClick) _ctx.SeekAhead(60);
+                if (RightController.ButtonOneTripleClick) _ctx.SeekAhead(180);
+                if (RightController.ThumbstickButtonSingleClick)
+                {
+                    ToggleMetaMode(MetaMode.Debug);
+                    if (metaMode == MetaMode.Debug)
+                        _ctx.EnableDebugGUI();
+                    else if (triggerMode == TriggerMode.None)
+                        _ctx.DisableDebugGUI();                        
+                }
+                if (RightController.ThumbstickButtonDoubleClick) _ctx.ResetProps();
 
                 // If applicable, deal with extraMode specific buttons here.
 
@@ -95,13 +119,19 @@ public class InputController
                 if (RightController.ThumbstickAnyX)
                     //_ctx.OffsetProp("_RotationY", -thumb.x, -180, 180);
                     if (RightController.ThumbstickMostlyX)
-                        _ctx.AdjustMaskMultiplier(thumb.x);
-                        //_ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
+                        if (metaMode == MetaMode.Debug)
+                            _ctx.OffsetProp("_SampleDecay", thumb.x * 0.03f, 0, 2, Blitter.dynThreshBlitMat);
+                        else 
+                            _ctx.AdjustMaskMultiplier(thumb.x);
+                            //_ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                 if (RightController.ThumbstickAnyY)
                     //_ctx.OffsetProp("_RotationX", thumb.y, -180, 180);
                     if (RightController.ThumbstickMostlyY)
-                        _ctx.AdjustMaskPower(thumb.y);
-                        //_ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
+                        if (metaMode == MetaMode.Debug)
+                            _ctx.OffsetProp("_OutputDecay", thumb.y * 0.03f, 0, 2, Blitter.dynThreshBlitMat);
+                        else
+                            _ctx.AdjustMaskPower(thumb.y);
+                            //_ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
                 break;
 
             case TriggerMode.TransparencyAndExposure: // BOTH TRIGGERS
@@ -110,8 +140,8 @@ public class InputController
                 if (RightController.ButtonOne) ToggleMode(ExtraMode.ResizeFactorAndResize);
 
                 // ExtraMode-specific buttons
-                // Note: button behavior has the switch on the outside
-                // (Thumbstick behavior is the other way around)
+                // Note: button behavior has the switch on the outside,
+                // (Thumbstick pattern is the other way around)
                 switch (extraMode)
                 {
                     case ExtraMode.None:
@@ -120,52 +150,93 @@ public class InputController
                         break;
                 }
 
-                if (RightController.ThumbstickMostlyDiagonalRight)
+                // For top-level switches (kludgy, just for now):
+                switch (metaMode)
                 {
-                    switch (extraMode)
-                    {
-                        case ExtraMode.None:
-                            _ctx.OffsetProp("_Saturation", RightController.ThumbstickDiagonalMagnitude*0.02f, 0, 1);
-                            break;
-                    }
+                    case MetaMode.None:
+                        if (RightController.ThumbstickMostlyDiagonalRight)
+                        {
+                            switch (extraMode)
+                            {
+                                case ExtraMode.None:
+                                    _ctx.OffsetProp("_Saturation", RightController.ThumbstickDiagonalMagnitude * 0.02f, 0, 1);
+                                    break;
+                            }
+                        }
+                        else if (RightController.ThumbstickMostlyDiagonalLeft)
+                        {
+                            switch (extraMode)
+                            {
+                                case ExtraMode.None:
+                                    _ctx.OffsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.003f, 0, 2);
+                                    break;
+                            }
+                        }
+                        else if (RightController.ThumbstickMostlyX) // this will effectively lock to the axis
+                        //if (RightController.ThumbstickMostlyX)
+                            switch (extraMode) {
+                                case ExtraMode.None:
+                                    //_ctx.OffsetProp("_ColorDistMultThresh", thumb.x * 0.002f, 0, 0.1f, Blitter.dynThreshBlitMat);
+                                    _ctx.OffsetProp("_Transparency", thumb.x * 0.02f, -1.5f, 1.5f);
+                                    break;
+                                case ExtraMode.ZoomAndHorizontalOffset:
+                                    //_ctx.OffsetProp("_DistMultiplier", thumb.x * 0.1f, 1, 20, Blitter.dynThreshBlitMat);
+                                    _ctx.OffsetProp("_HorizontalOffset", thumb.x * 0.01f, -1.5f, 1.5f);
+                                    break;
+                                case ExtraMode.ResizeFactorAndResize:
+                                    //_ctx.OffsetProp("_InnerThreshMultiplier", thumb.x * 0.1f, 1, 20, Blitter.dynThreshBlitMat);
+                                    _ctx.combinedZoomFactor = Mathf.Clamp(_ctx.combinedZoomFactor + thumb.x * 0.05f, -15.0f, 15.0f);
+                                    break;
+                            }
+                        else if (RightController.ThumbstickMostlyY)
+                            switch (extraMode)
+                            {
+                                case ExtraMode.None:
+                                    //_ctx.OffsetProp("_ColorDistMultStrength", thumb.y * 0.5f, 0, 30, Blitter.dynThreshBlitMat);
+                                    _ctx.OffsetProp("_Exposure", thumb.y * 0.02f, 0, 2);
+                                    break;
+                                case ExtraMode.ZoomAndHorizontalOffset:
+                                    //_ctx.OffsetProp("_DistPower", thumb.y * 0.1f, 1, 20, Blitter.dynThreshBlitMat);
+                                    _ctx.OffsetProp("_BaseZoom", thumb.y * 0.01f, -3.00f, 3.00f);
+                                    break;
+                                case ExtraMode.ResizeFactorAndResize:
+                                    //_ctx.OffsetProp("_InnerThreshPower", thumb.y * 0.1f, 1, 20, Blitter.dynThreshBlitMat);
+                                    // Argh, this should ESPECIALLY be defined somewhere:
+                                    float step = 0.005f;
+                                    _ctx.OffsetProp("_BaseZoom", thumb.y * step, -3.00f, 3.00f);
+                                    _ctx.OffsetProp("_HorizontalOffset", thumb.y * step / _ctx.combinedZoomFactor, -3.00f / Mathf.Abs(_ctx.combinedZoomFactor), 3.00f / Mathf.Abs(_ctx.combinedZoomFactor));
+                                    break;
+                            }
+                        break;
+                    case MetaMode.Debug:
+                        if (RightController.ThumbstickMostlyX) // this will effectively lock to the axis
+                            switch (extraMode)
+                            {
+                                case ExtraMode.None:
+                                    _ctx.OffsetProp("_ColorDistMultThresh", thumb.x * 0.002f, 0, 1.0f, Blitter.dynThreshBlitMat);
+                                    break;
+                                case ExtraMode.ZoomAndHorizontalOffset:
+                                    _ctx.OffsetProp("_DistMultiplier", thumb.x * 0.1f, 0, 20, Blitter.dynThreshBlitMat);
+                                    break;
+                                case ExtraMode.ResizeFactorAndResize:
+                                    _ctx.OffsetProp("_InnerThreshMultiplier", thumb.x * 0.1f, 1, 20, Blitter.dynThreshBlitMat);
+                                    break;
+                            }
+                        else if (RightController.ThumbstickMostlyY)
+                            switch (extraMode)
+                            {
+                                case ExtraMode.None:
+                                    _ctx.OffsetProp("_ColorDistMultStrength", thumb.y * 0.5f, 0, 40, Blitter.dynThreshBlitMat);
+                                    break;
+                                case ExtraMode.ZoomAndHorizontalOffset:
+                                    _ctx.OffsetProp("_DistPower", thumb.y * 0.1f, 0, 20, Blitter.dynThreshBlitMat);
+                                    break;
+                                case ExtraMode.ResizeFactorAndResize:
+                                    _ctx.OffsetProp("_InnerThreshPower", thumb.y * 0.1f, 1, 20, Blitter.dynThreshBlitMat);
+                                    break;
+                            }
+                        break;
                 }
-                else if (RightController.ThumbstickMostlyDiagonalLeft)
-                {
-                    switch (extraMode)
-                    {
-                        case ExtraMode.None:
-                            _ctx.OffsetProp("_Contrast", RightController.ThumbstickDiagonalMagnitude * 0.003f, 0, 2);
-                            break;
-                    }
-                }
-                else if (RightController.ThumbstickMostlyX) // this will effectively lock to the axis
-                    switch (extraMode) {
-                        case ExtraMode.None:
-                            _ctx.OffsetProp("_Transparency", thumb.x * 0.02f, -1.5f, 1.5f);
-                            break;
-                        case ExtraMode.ZoomAndHorizontalOffset:
-                            _ctx.OffsetProp("_HorizontalOffset", thumb.x * 0.01f, -1.5f, 1.5f);
-                            break;
-                        case ExtraMode.ResizeFactorAndResize:
-                            _ctx.combinedZoomFactor = Mathf.Clamp(_ctx.combinedZoomFactor + thumb.x * 0.05f, -15.0f, 15.0f);
-                            break;
-                    }
-                else if (RightController.ThumbstickMostlyY)
-                    switch (extraMode)
-                    {
-                        case ExtraMode.None:
-                            _ctx.OffsetProp("_Exposure", thumb.y * 0.02f, 0, 2);
-                            break;
-                        case ExtraMode.ZoomAndHorizontalOffset:
-                            _ctx.OffsetProp("_BaseZoom", thumb.y * 0.01f, -3.00f, 3.00f);
-                            break;
-                        case ExtraMode.ResizeFactorAndResize:
-                            // Argh, this should ESPECIALLY be defined somewhere:
-                            float step = 0.005f;
-                            _ctx.OffsetProp("_BaseZoom", thumb.y * step, -3.00f, 3.00f);
-                            _ctx.OffsetProp("_HorizontalOffset", thumb.y * step / _ctx.combinedZoomFactor, -3.00f / Mathf.Abs(_ctx.combinedZoomFactor), 3.00f / Mathf.Abs(_ctx.combinedZoomFactor));
-                            break;
-                    }
                 break;
 
             case TriggerMode.ZoomCompAndZoomAdjustComp: // INDEX TRIGGER
@@ -176,7 +247,8 @@ public class InputController
                     case ExtraMode.None:
                     case ExtraMode.ZoomShiftXY:
                         if (RightController.ThumbstickButton) ToggleMode(ExtraMode.PlaybackSeekForward);
-                        if (RightController.ButtonTwo) ToggleMode(ExtraMode.NudgeXY);
+                        if (RightController.ButtonTwoSingleClick) ToggleMode(ExtraMode.NudgeXY);
+                        if (RightController.ButtonTwoDoubleClick) _ctx.ToggleProp("_VerticalFlip");
                         if (RightController.ButtonOne) ToggleMode(ExtraMode.ZoomShiftXY);
                         break;
                     case ExtraMode.PlaybackSeekForward:
@@ -205,8 +277,10 @@ public class InputController
                             _ctx.OffsetProp("_ZoomShiftX", thumb.x * 0.02f, -1, 1);
                             break;
                         case ExtraMode.PlaybackSeekForward:
-                        case ExtraMode.PlaybackSeekBackward:
                             _ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
+                            break;
+                        case ExtraMode.PlaybackSeekBackward:
+                            _ctx.OffsetProp("_BlurX", thumb.x * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
                             break;
                     }
 
@@ -235,8 +309,10 @@ public class InputController
                                 _ctx.OffsetProp("_ZoomShiftY", thumb.y * 0.02f, -1, 1);
                             break;
                         case ExtraMode.PlaybackSeekForward:
-                        case ExtraMode.PlaybackSeekBackward:
                             _ctx.OffsetProp("_WeightPower", thumb.y*0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
+                            break;
+                        case ExtraMode.PlaybackSeekBackward:
+                            _ctx.OffsetProp("_BlurY", thumb.y * 0.075f, 0, 5, Blitter.matteMaskAlphaBlurMat);
                             break;
                     }
                 break;
@@ -277,8 +353,11 @@ public class InputController
                     switch (extraMode)
                     {
                         case ExtraMode.None:
+                            if (metaMode == MetaMode.Debug)
+                                _ctx.OffsetProp("_DecayDampThresh", thumb.x * 0.002f, 0, 0.2f, Blitter.dynThreshBlitMat);
+                            else
+                                _ctx.OffsetProp("_HorizontalOffsetNudgeFactor", thumb.x * 0.05f, 0, 1); // Horizontal Offset Factor
                             //_ctx.OffsetProp("_AutoShiftRotationXNudgeFactor", -thumb.x * 0.5f, -360, 360);
-                            _ctx.OffsetProp("_HorizontalOffsetNudgeFactor", thumb.x * 0.05f, 0, 1); // Horizontal Offset Factor
                             //_ctx.outliner.handOffsetX += thumb.x;
                             break;
                         case ExtraMode.SwatchPicker:
@@ -293,7 +372,10 @@ public class InputController
                     switch (extraMode)
                     {
                         case ExtraMode.None:
-                            _ctx.OffsetProp("_Saturation", thumb.y * 0.02f, 0, 1);
+                            if (metaMode == MetaMode.Debug)
+                                _ctx.OffsetProp("_DecayDampStrength", thumb.y * 0.5f, 0, 20, Blitter.dynThreshBlitMat);
+                            else 
+                                _ctx.OffsetProp("_Saturation", thumb.y * 0.02f, 0, 1);
                             //_ctx.outliner.handOffsetY += thumb.y;
                             break;
                         case ExtraMode.SwatchPicker:
@@ -304,6 +386,8 @@ public class InputController
         }
 
         // Keyboard, for debugging:
+        if (Input.GetKeyDown(KeyCode.F))
+            _ctx.ToggleProp("_VerticalFlip");
         if (Input.GetKeyDown(KeyCode.I))
             _ctx.swatchDetector.MakeFreshSwatches();
         if (Input.GetKeyDown(KeyCode.O))

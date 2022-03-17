@@ -80,10 +80,10 @@ Shader "Custom/ShadowCompositing"
                     //sceneTex.rgb *= max((1-maskTex.r*1.75), 0);
 
                     // For outlined shadow-hand (ugly)
-                    if (maskTex.r > 0.25 && maskTex.r < 0.5)
+                    //if (maskTex.r > 0.25 && maskTex.r < 0.5)
                         //sceneTex.rgb = float3(1, 0, 0.5);
-                        sceneTex.rgb = float3(0.42, 0.06, 0.92);
-                    else 
+                        //sceneTex.rgb = float3(0.42, 0.06, 0.92);
+                    //else 
                         sceneTex.rgb *= max((1-maskTex.r*1.75), 0.5);
 
 
