@@ -6,7 +6,7 @@ using UnityEngine;
 public class ClipConfig
 {
     // Manually increment this when changing the format!
-    public int version = 32;
+    public int version = 33;
 
     // Note on the properties:
     //  1) The default values will override the Skybox Material properties
@@ -80,10 +80,12 @@ public class ClipConfig
     public float _InnerThreshMultiplier = 1;
     public float _InnerThreshPower = 1;
 
+    public long playStart = 0;
+    public long playEnd = 0;
+
     // used to trigger a save when modified
     [System.NonSerialized]
     public bool needsUpdate = false;
-
 
     // Used for loading settings to the Skybox.
     // WARNING: it follows a brittle convention and doesn't

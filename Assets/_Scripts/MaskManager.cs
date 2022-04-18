@@ -40,7 +40,7 @@ public class MaskManager
     }
 
     private long lastColorIdx = 0;
-    private int colorSkip = 8;
+    private int colorSkip = 5;
 
     public RenderTexture[] dsts = new RenderTexture[3];
 
@@ -64,6 +64,7 @@ public class MaskManager
 
     public void OnNewFrame(VideoPlayer source, long frameIdx)
     {
+        HandleTimeBounds(frameIdx);
         if (_isDifferenceMaskEnabled == 0) return; // just in case the listener lingers; handle better
         if (frameIdx < lastFrameIdx)
             lastFrameIdx = lastColorIdx = frameIdx;
@@ -85,6 +86,18 @@ public class MaskManager
             RenderDynThreshTick(source, frameIdx);
 
 
+    }
+
+    // Temporary; logic needs re-thinking
+    void HandleTimeBounds(long frameIdx)
+    {
+
+        var config = clipConfigs[clipPool.index];
+        if (config.playStart > 0 && frameIdx < config.playStart)
+            clipPool.current.frame = config.playStart;
+        if (config.playEnd > 0 && frameIdx >= config.playEnd)
+            clipPool.current.frame = config.playStart;
+        _resetFrameCapture();
     }
 
     void ShiftDiffTexes(VideoPlayer source)
@@ -112,6 +125,7 @@ public class MaskManager
 
         bool shouldReadColors = frameIdx - lastColorIdx >= colorSkip;
         Blitter.SetRunningTextures(Blitter.dynThreshBlitMat, dsts);
+        Blitter.SetRunningTextures(skyboxMat, dsts);
         Blitter.ApplyDynThresh(skyboxMat, source.texture, shouldReadColors);
         if (shouldReadColors) lastColorIdx = frameIdx;
 
@@ -237,7 +251,7 @@ public class MaskManager
         {
             finishedInitialCapture = false;
             //dsts = new RenderTexture[3];
-            lastFrameIdx = 0;
+            lastFrameIdx = lastColorIdx = 0;
             shouldRender = true;
         }
     }

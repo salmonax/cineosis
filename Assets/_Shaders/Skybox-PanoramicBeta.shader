@@ -532,6 +532,7 @@ SubShader {
 
            
             if (_UseDifferenceMask == 4) {
+                tex = last3;
                 float4 dynThresh = tex2D(_DynThreshTex, tc);
                 //return dynThresh;
                 //tex.a = pow(dynThresh*3, 2);
@@ -823,9 +824,9 @@ SubShader {
 
           if (_UseDifferenceMask == 2) {
               /* was 1.5, 2.5 for a while: */
-              tex.a = min(pow(colorMask*1.25, 1.25),1) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
+              tex.a = pow(colorMask*1.25, 1.25) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
               //tex.a = min(colorMask*3,1) * maxAlpha;// pow(colorMask*1.5, 1.5) * maxAlpha; // was 1.75, 2.25 forever; 1.25 1.75, then 1.5 1.5
-              tex.rgb *= tex.a;
+              tex.rgb *= min(tex.a,1);
 
               //tex.rgb = HSVtoRGB(_ColorTestArray[0]);
                //return colorMask;

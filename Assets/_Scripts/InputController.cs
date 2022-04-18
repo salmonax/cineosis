@@ -136,8 +136,14 @@ public class InputController
 
             case TriggerMode.TransparencyAndExposure: // BOTH TRIGGERS
                 // Global buttons
-                if (RightController.ButtonTwo) ToggleMode(ExtraMode.ZoomAndHorizontalOffset);
-                if (RightController.ButtonOne) ToggleMode(ExtraMode.ResizeFactorAndResize);
+                if (RightController.ButtonTwoSingleClick) ToggleMode(ExtraMode.ZoomAndHorizontalOffset);
+                if (RightController.ButtonOneSingleClick) ToggleMode(ExtraMode.ResizeFactorAndResize);
+
+                if (RightController.ButtonTwoDoubleClick) _ctx.SetPlayStart();
+                if (RightController.ButtonTwoTripleClick) _ctx.ClearPlayStart();
+
+                if (RightController.ButtonOneDoubleClick) _ctx.SetPlayEnd();
+                if (RightController.ButtonOneTripleClick) _ctx.ClearPlayEnd();
 
                 // ExtraMode-specific buttons
                 // Note: button behavior has the switch on the outside,
@@ -413,5 +419,13 @@ public class InputController
             _ctx.swatchDetector.Toggle(SwatchPickerMode.MaskDrawDeleteExclusion);
             _ctx.swatchDetector.UseAndPlaceLight();
         }
+        if (Input.GetKeyDown(KeyCode.Z))
+            _ctx.SetPlayStart();
+        if (Input.GetKeyDown(KeyCode.X))
+            _ctx.SetPlayEnd();
+        if (Input.GetKeyDown(KeyCode.C))
+            _ctx.ClearPlayStart();
+        if (Input.GetKeyDown(KeyCode.V))
+            _ctx.ClearPlayStart();
     }
 }

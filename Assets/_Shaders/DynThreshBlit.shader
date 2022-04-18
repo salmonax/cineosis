@@ -168,8 +168,8 @@ Shader "Unlit/DynThreshBlit"
                 float cieDistSum = (d1+d2+d3+d4+d5+d6);
 
                 /// WARNING: bunk darkness biasing term!
-                if (texHSV.b < 0.05)
-                    cieDistSum *= 1 + (1-pow(texHSV.b/0.05,0.1))*99;
+                //if (texHSV.b < 0.05)
+                    //cieDistSum *= 1 + (1-pow(texHSV.b/0.05,0.1))*99;
 
                 float colorDecayDamping = 1;
                 float colorDistMultiplier = 0;

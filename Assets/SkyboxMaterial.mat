@@ -178,7 +178,7 @@ Material:
     - _Transparency: 1.5
     - _UVSec: 0
     - _UseDiffMask: 0
-    - _UseDifferenceMask: 1
+    - _UseDifferenceMask: 4
     - _UseSwatchPickerMode: 0
     - _VerticalFlip: 0
     - _ZWrite: 1

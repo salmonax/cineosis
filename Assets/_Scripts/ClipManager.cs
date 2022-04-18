@@ -555,10 +555,18 @@ public partial class ClipManager : MonoBehaviour
             SetLayoutFromResolution(enteringClip);
 
             _undoConfig = null;
+
+
+            var playStart = clipConfigs[newIndex].playStart;
+            // Check playStart in case the video has changed.
+            if (playStart <= (long)enteringClip.frameCount && playStart > 0 && enteringClip.frame == 0)
+                enteringClip.frame = playStart;
+
             clipConfigs[newIndex].ApplyToMaterial(skyboxMat);
             // Not necessary, but it'll surface any bugs related to globalizing the DynThresh fields.
             clipConfigs[newIndex].ApplyToMaterial(Blitter.dynThreshBlitMat, true); // useDynThreshFields = true
 
+            Debug.Log("FUCK: " + clipPool.currentMatte);
             Blitter.SetCurrentMatte(clipPool.currentMatte); // ignores if null
             PullAndSetMaskState();
             _resetFrameCapture(false); // don't check current mode

@@ -46,7 +46,7 @@ public partial class ClipManager
     {
         if (_isDifferenceMaskEnabled == 3)
             OffsetProp("_MatteAlphaMultiplier", amount * 0.1f, 1.0f, 30);
-        else if (_isDifferenceMaskEnabled == 1)
+        else if (_isDifferenceMaskEnabled == 4)
             OffsetProp("_DynThreshMultiplier", amount * 0.1f, 1.0f, 30);
 
     }
@@ -54,7 +54,7 @@ public partial class ClipManager
     {
         if (_isDifferenceMaskEnabled == 3)
             OffsetProp("_MatteAlphaPower", amount * 0.1f, 1.0f, 30);
-        else if (_isDifferenceMaskEnabled == 1)
+        else if (_isDifferenceMaskEnabled == 4)
             OffsetProp("_DynThreshPower", amount * 0.1f, 1.0f, 30);
     }
 
@@ -131,6 +131,38 @@ public partial class ClipManager
         clipPool.current.playbackSpeed =
         (clipPool.current.playbackSpeed == amount) ?
              1 : amount;
+    }
+
+    public void SetPlayEnd()
+    {
+        var endFrame = clipPool.current.frame;
+        var config = clipConfigs[clipPool.index];
+        if (config.playStart >= endFrame)
+            config.playStart = 0;
+        config.playEnd = endFrame;
+        ClipConfig.Save(clipConfigs);
+    }
+        
+    public void SetPlayStart()
+    {
+        var startFrame = clipPool.current.frame;
+        var config = clipConfigs[clipPool.index];
+        if (config.playEnd <= startFrame)
+            config.playEnd = 0;
+        config.playStart = startFrame;
+        ClipConfig.Save(clipConfigs);
+    }
+
+    public void ClearPlayStart()
+    {
+        clipConfigs[clipPool.index].playStart = 0;
+        ClipConfig.Save(clipConfigs);
+    }
+
+    public void ClearPlayEnd()
+    {
+        clipConfigs[clipPool.index].playEnd = 0;
+        ClipConfig.Save(clipConfigs);
     }
 
     public void SeekAhead(int seconds) =>
