@@ -550,7 +550,7 @@ public partial class ClipManager : MonoBehaviour
             // This callback runs after entering video is prepared.
             // (small detail: clipPool also prepares the next two videos FIRST)
             enteringClip.targetTexture = skyboxTex;
-            if (offset != 0) exitingClip.targetTexture = null;
+            if (offset != 0 && exitingClip != enteringClip) exitingClip.targetTexture = null;
             skyboxMat.SetInt("_VideoIndex", newIndex);
             SetLayoutFromResolution(enteringClip);
 
@@ -566,7 +566,6 @@ public partial class ClipManager : MonoBehaviour
             // Not necessary, but it'll surface any bugs related to globalizing the DynThresh fields.
             clipConfigs[newIndex].ApplyToMaterial(Blitter.dynThreshBlitMat, true); // useDynThreshFields = true
 
-            Debug.Log("FUCK: " + clipPool.currentMatte);
             Blitter.SetCurrentMatte(clipPool.currentMatte); // ignores if null
             PullAndSetMaskState();
             _resetFrameCapture(false); // don't check current mode
