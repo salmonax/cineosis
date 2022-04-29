@@ -122,13 +122,15 @@ public class DelayedButton
     float _clickCounter;
     float _waitPerPress;
     float _waitPadding;
+    System.Func<int> _getTriggerState;
+    int _initialTriggerState;
 
-    public DelayedButton(OVRInput.Button button, float waitPerPress = 0.3f, float waitPadding = 0.2f)
+    public DelayedButton(OVRInput.Button button, System.Func<int> getTriggerState, float waitPerPress = 0.3f, float waitPadding = 0.2f)
     {
         _button = button;
         _waitPerPress = waitPerPress;
         _waitPadding = waitPadding;
-
+        _getTriggerState = getTriggerState;
         Reset();
     }
     public bool MultiClickedPro(int clickCount)
@@ -137,16 +139,15 @@ public class DelayedButton
             Time.time - _latestClickTime >= _waitPerPress &&
             Time.time - _latestClickTime < _waitPerPress + _waitPadding
         )
-        {
+        { 
             Reset();
-            return true;
+            return _initialTriggerState == _getTriggerState(); // will effectively cancel if trigger has changed.
         }
         return false;
     }
 
     public bool SingleClicked() => MultiClickedPro(1);
     public bool DoubleClicked() => MultiClickedPro(2);
-
 
     public bool ClickedThisFrame(bool shouldReset = true)
     {
@@ -162,6 +163,8 @@ public class DelayedButton
 
         _latestClickTime = Time.time;
         _clickCounter++;
+        if (_clickCounter == 1)
+            _initialTriggerState = _getTriggerState();
     }
     public void Reset()
     {
@@ -185,9 +188,9 @@ public class RightController
 
     private static ThumbstickMode _thumbstickMode = ThumbstickMode.Centered;
 
-    private static DelayedButton _delayedButtonOne = new DelayedButton(OVRInput.Button.One);
-    private static DelayedButton _delayedButtonTwo = new DelayedButton(OVRInput.Button.Two);
-    private static DelayedButton _delayedThumbstickButton = new DelayedButton(OVRInput.Button.SecondaryThumbstick);
+    private static DelayedButton _delayedButtonOne = new DelayedButton(OVRInput.Button.One, GetTriggerState);
+    private static DelayedButton _delayedButtonTwo = new DelayedButton(OVRInput.Button.Two, GetTriggerState);
+    private static DelayedButton _delayedThumbstickButton = new DelayedButton(OVRInput.Button.SecondaryThumbstick, GetTriggerState);
 
     public static void Update()
     {
@@ -219,6 +222,15 @@ public class RightController
         if (_delayedThumbstickButton.ClickedThisFrame(false))
             _delayedThumbstickButton.RegisterClick();
      }
+    public static int GetTriggerState()
+    {
+       // 0 = none, 1 = index, 2 = hand, 3 = both
+        int state = 0;
+        if (_indexTrigger > 0) state += 1;
+        if (_handTrigger > 0) state += 2;
+        return state;
+       
+    }
     public static bool HandTrigger
     {
         get => _handTrigger > 0;

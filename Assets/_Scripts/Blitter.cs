@@ -77,9 +77,12 @@ public static class Blitter
 
     public static void SetRunningTextures(Material material, RenderTexture[] dsts)
     {
-        material.SetTexture("_LastTex", dsts[0]);
-        material.SetTexture("_LastTex2", dsts[1]);
-        material.SetTexture("_LastTex3", dsts[2]);
+        var first = dsts[0];
+        var second = dsts[1] != null ? dsts[1] : dsts[0];
+        var third = dsts[2] != null ? dsts[2] : second;
+        material.SetTexture("_LastTex", first);
+        material.SetTexture("_LastTex2", second);
+        material.SetTexture("_LastTex3", third);
     }
 
     public static void ApplyDynThresh(

@@ -6,6 +6,6 @@ public partial class ClipManager
     }
     public void PullAndSetMaskState() => maskManager.PullAndSetMaskState();
     public void RenderColorMaskTick() => maskManager.RenderColorMaskTick();
-    public void _resetFrameCapture(bool diffMaskOnly = true) =>
-        maskManager._resetFrameCapture(diffMaskOnly);
+    public void _resetFrameCapture(bool diffMaskOnly = true, bool clearDsts = true) =>
+        maskManager._resetFrameCapture(diffMaskOnly, clearDsts);
 }

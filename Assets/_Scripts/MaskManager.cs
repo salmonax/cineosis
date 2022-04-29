@@ -93,11 +93,12 @@ public class MaskManager
     {
 
         var config = clipConfigs[clipPool.index];
-        if (config.playStart > 0 && frameIdx < config.playStart)
+        if ((config.playStart > 0 && frameIdx < config.playStart) ||
+            (config.playEnd > 0 && frameIdx >= config.playEnd))
+        {
             clipPool.current.frame = config.playStart;
-        if (config.playEnd > 0 && frameIdx >= config.playEnd)
-            clipPool.current.frame = config.playStart;
-        _resetFrameCapture();
+            _resetFrameCapture(true, false);
+        }
     }
 
     void ShiftDiffTexes(VideoPlayer source)
@@ -245,17 +246,19 @@ public class MaskManager
             DisableMask(false);
     }
 
-    public void _resetFrameCapture(bool diffMaskOnly = true)
+    public void _resetFrameCapture(bool diffMaskOnly = true, bool clearDsts = true)
     {
         if (!diffMaskOnly || _isDifferenceMaskEnabled > 0)
         {
             finishedInitialCapture = false;
-            //dsts = new RenderTexture[3];
+            if (clearDsts)
+                for (int i = 0; i < dsts.Length; i++)
+                    dsts[i] = null;
             lastFrameIdx = lastColorIdx = 0;
             shouldRender = true;
         }
     }
-    void EndReached(VideoPlayer vp) => _resetFrameCapture();
+    void EndReached(VideoPlayer vp) => _resetFrameCapture(true, false);
 
     VideoPlayer getCurrentPlayer() => clipPool.current;
 
