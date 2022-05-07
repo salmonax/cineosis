@@ -64,7 +64,6 @@ public class MaskManager
 
     public void OnNewFrame(VideoPlayer source, long frameIdx)
     {
-        HandleTimeBounds(frameIdx);
         if (_isDifferenceMaskEnabled == 0) return; // just in case the listener lingers; handle better
         if (frameIdx < lastFrameIdx)
             lastFrameIdx = lastColorIdx = frameIdx;
@@ -84,8 +83,7 @@ public class MaskManager
 
         if (_isDifferenceMaskEnabled == 4)
             RenderDynThreshTick(source, frameIdx);
-
-
+        HandleTimeBounds(frameIdx);
     }
 
     // Temporary; logic needs re-thinking
