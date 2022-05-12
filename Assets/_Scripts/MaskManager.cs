@@ -73,15 +73,14 @@ public class MaskManager
                 Blitter.ApplyMatteAlpha(skyboxMat, source.texture, clipPool.currentMatte, frameIdx % 2 == 0);
             else
                 CycleMaskModes(); // Just get out of the mode! Real easy-like.
-            return;
         }
-        if (_isDifferenceMaskEnabled == 2)
+        else if (_isDifferenceMaskEnabled == 2)
             RenderColorMaskTick(source); // not differentiating eyes, and brittle when called from swatchPicker!
 
-        if (_isDifferenceMaskEnabled == 2 || _isDifferenceMaskEnabled == 1)
+        else if (_isDifferenceMaskEnabled == 2 || _isDifferenceMaskEnabled == 1)
             RenderClassicDiffMaskTick(source, frameIdx);
 
-        if (_isDifferenceMaskEnabled == 4)
+        else if (_isDifferenceMaskEnabled == 4)
             RenderDynThreshTick(source, frameIdx);
         HandleTimeBounds(frameIdx);
     }

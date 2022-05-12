@@ -207,14 +207,20 @@ public class Outliner : MonoBehaviour
     }
 
     public float handOffsetX = 0;
+    public float handDepthCompX = 0;
     public float handOffsetY = 0;
     public float drHandOffsetX = 0;
     public float drHandOffsetY = 0;
     private void OnRenderImage(RenderTexture src, RenderTexture dst)
     {
         var curScreen = Camera.current.WorldToScreenPoint(rightHand.transform.position, Camera.current.stereoActiveEye);
-        if (VR.Left) ClipManager.hpLeft = curScreen;
-        if (VR.Right) ClipManager.hpRight = curScreen;
+        var handDepthSign = 1;
+        if (VR.Left)
+        {
+            ClipManager.hpLeft = curScreen;
+            handDepthSign = -1;
+        }
+        else if (VR.Right) ClipManager.hpRight = curScreen;
 
         var handDeltaX = curScreen.x - lastScreenRelativeHandPos.x;
         var handDeltaY = curScreen.y - lastScreenRelativeHandPos.y;
@@ -228,18 +234,18 @@ public class Outliner : MonoBehaviour
         //}
 
         // Only do the clever hand-offset when not showing the controller model:
-        if (OVRInput.IsControllerConnected(OVRInput.Controller.Hands))
-        {
+        //if (OVRInput.IsControllerConnected(OVRInput.Controller.Hands))
+        //{
             drHandOffsetX = 0.051f * curScreen.x - 35;
             drHandOffsetY = 0.070f * curScreen.y - 27;
-        } else
-            drHandOffsetX = drHandOffsetY = 0;
+        //} else
+            //drHandOffsetX = drHandOffsetY = 0;
 
 
         Blitter.Clear(src, grainRt, Blitter.filmGrainMaterial);
         //_compositingMaterial.SetFloat("_HandOffsetX", handOffsetX);
         //_compositingMaterial.SetFloat("_HandOffsetY", handOffsetY);
-        _compositingMaterial.SetFloat("_HandOffsetX", drHandOffsetX + handOffsetX);
+        _compositingMaterial.SetFloat("_HandOffsetX", drHandOffsetX + handOffsetX + handDepthCompX*handDepthSign);
         _compositingMaterial.SetFloat("_HandOffsetY", drHandOffsetY + handOffsetY);
         _compositingMaterial.SetTexture("_GrainTex", grainRt);
         _compositingMaterial.SetTexture("_SceneTex", src);

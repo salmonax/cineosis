@@ -459,6 +459,7 @@ public partial class ClipManager : MonoBehaviour
 
                 ((_inputController.metaMode == MetaMode.Debug) ?
                     "<color=yellow>" +
+                    "HAND DEPTH: " + System.Math.Round(outliner.handDepthCompX, 2).ToString("0.00") + " |\n| " +
                     "SampleDecay: " + guiLabel("_SampleDecay", 3, Blitter.dynThreshBlitMat) + "|\n|" +
                     "OutputDecay: " + guiLabel("_OutputDecay", 3, Blitter.dynThreshBlitMat) + "|\n|" +
                     "ColorDistMultThresh: " + guiLabel("_ColorDistMultThresh", 3, Blitter.dynThreshBlitMat) + "|\n|" +

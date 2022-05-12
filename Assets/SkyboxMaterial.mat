@@ -142,7 +142,7 @@ Material:
     - _HorizontalOffset: 0
     - _HorizontalOffsetNudgeFactor: 0.24
     - _ImageType: 1
-    - _Layout: 1
+    - _Layout: 2
     - _Mapping: 1
     - _MatteAlphaMultiplier: 1
     - _MatteAlphaPower: 1

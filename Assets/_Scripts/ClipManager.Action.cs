@@ -82,7 +82,7 @@ public partial class ClipManager
         }
         else
         {
-            _resetFrameCapture();
+            _resetFrameCapture(true, false);
             clip.Play();
         }
     }

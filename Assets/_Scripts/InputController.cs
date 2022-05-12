@@ -120,7 +120,8 @@ public class InputController
                     //_ctx.OffsetProp("_RotationY", -thumb.x, -180, 180);
                     if (RightController.ThumbstickMostlyX)
                         if (metaMode == MetaMode.Debug)
-                            _ctx.OffsetProp("_SampleDecay", thumb.x * 0.03f, 0, 2, Blitter.dynThreshBlitMat);
+                            _ctx.outliner.handDepthCompX = Mathf.Clamp(_ctx.outliner.handDepthCompX + thumb.x * 0.5f, -50.0f, 50.0f);
+                            //_ctx.OffsetProp("_SampleDecay", thumb.x * 0.03f, 0, 2, Blitter.dynThreshBlitMat);
                         else 
                             _ctx.AdjustMaskMultiplier(thumb.x);
                             //_ctx.OffsetProp("_WeightMultiplier", thumb.x * 0.1f, 1, 30, Blitter.matteMaskAlphaBlitMat);
